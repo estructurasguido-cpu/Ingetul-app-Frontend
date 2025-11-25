@@ -3,11 +3,7 @@ import { GOOGLE_CONFIG } from "../config/google";
 
 export default function useGoogleAuth() {
 
-  const { CLIENT_ID, REDIRECT_URI_DEV, REDIRECT_URI_PROD, SCOPE } = GOOGLE_CONFIG;
-
-  const REDIRECT_URI = window.location.hostname === "localhost"
-    ? REDIRECT_URI_DEV
-    : REDIRECT_URI_PROD;
+  const { CLIENT_ID, REDIRECT_URI, SCOPE } = GOOGLE_CONFIG;
 
   const [token, setToken] = useState(localStorage.getItem("google_token"));
   const [loading, setLoading] = useState(true);
