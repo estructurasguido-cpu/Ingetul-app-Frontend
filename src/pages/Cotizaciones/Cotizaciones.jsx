@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import { useDepartamentos } from "../../hooks/useDepartments";
 import { useGoogle } from "../../context/GoogleContext";
 import { GOOGLE_CONFIG } from "../../config/google";
@@ -337,15 +338,15 @@ export default function Cotizaciones() {
   };
 
   return (
-    <main className="max-w-[900px] bg-white mx-auto my-10 p-10 rounded-xl shadow-lg">
+    <main className="max-w-4xl mx-auto text-gray-800 p-4">
 
-      <h1 className="text-center text-[#0051ff] text-3xl font-bold mb-8">
+      <h1 className="text-center text-[#0051ff] text-2xl font-bold mb-8">
         Formulario de Cotización
       </h1>
 
       <form className="flex flex-col gap-8">
         {/* DATOS GENERALES */}
-        <section className="bg-[#f9fbff] p-5 rounded-lg border border-[#e3e8f5]">
+        <section>
           <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
             Datos Generales
           </h2>
@@ -501,136 +502,138 @@ export default function Cotizaciones() {
         </section>
 
         {/* ÍTEMS */}
-        <section className="bg-[#f9fbff] p-5 rounded-lg border border-[#e3e8f5]">
+        <section >
           <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
             Ítems
           </h2>
 
-          <table
-            data-error={errores.items || false}
-            className={`w-full border-collapse text-sm transition-all
+          <div className="w-full overflow-x-auto sm:overflow-visible">
+            <table
+              data-error={errores.items || false}
+              className={`w-full border-collapse text-sm transition-all
               ${errores.items ? "border-2 border-red-500 rounded-lg" : ""}`}
-          >
-            <thead>
-              <tr>
-                {[
-                  "Descripción",
-                  "UND",
-                  "Cant",
-                  "Vr. Unitario",
-                  "Vr. Total",
-                  "",
-                ].map((t) => (
-                  <th
-                    key={t}
-                    className="bg-[#0051ff] text-white p-2 text-center font-semibold"
-                  >
-                    {t}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+            >
+              <thead>
+                <tr>
+                  {[
+                    "Descripción",
+                    "UND",
+                    "Cant",
+                    "Vr. Unitario",
+                    "Vr. Total",
+                    "",
+                  ].map((t) => (
+                    <th
+                      key={t}
+                      className="bg-[#0051ff] text-white p-2 text-center font-semibold"
+                    >
+                      {t}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
 
-            <tbody>
-              {items.map((it, i) => {
-                const itemIncompleto =
-                  errores.items &&
-                  (it.desc.trim() === "" || Number(it.unit) <= 0);
+              <tbody>
+                {items.map((it, i) => {
+                  const itemIncompleto =
+                    errores.items &&
+                    (it.desc.trim() === "" || Number(it.unit) <= 0);
 
-                return (
-                  <tr
-                    key={i}
-                    className={`border border-gray-300 transition-all 
+                  return (
+                    <tr
+                      key={i}
+                      className={`border border-gray-300 transition-all 
                       ${itemIncompleto ? "bg-red-50" : ""}`}
-                  >
-                    {/* DESCRIPCIÓN */}
-                    <td className="p-1">
-                      <input
-                        className={`w-full p-1 border rounded 
+                    >
+                      {/* DESCRIPCIÓN */}
+                      <td className="p-1">
+                        <input
+                          className={`w-full p-1 border rounded 
                           ${itemIncompleto && it.desc.trim() === ""
-                            ? "border-red-500 ring-red-300"
-                            : "border-gray-300"
-                          }`}
-                        type="text"
-                        value={it.desc}
-                        onChange={(e) => {
-                          setErrores({ ...errores, items: false });
-                          handleChangeItem(i, "desc", e.target.value);
-                        }}
-                      />
-                    </td>
+                              ? "border-red-500 ring-red-300"
+                              : "border-gray-300"
+                            }`}
+                          type="text"
+                          value={it.desc}
+                          onChange={(e) => {
+                            setErrores({ ...errores, items: false });
+                            handleChangeItem(i, "desc", e.target.value);
+                          }}
+                        />
+                      </td>
 
-                    {/* UND */}
-                    <td className="p-1">
-                      <select
-                        className="w-full p-1 border border-gray-300 rounded"
-                        value={it.und}
-                        onChange={(e) =>
-                          handleChangeItem(i, "und", e.target.value)
-                        }
-                      >
-                        <option value="und">Unidad (UND)</option>
-                        <option value="glb">Global (glb)</option>
-                        <option value="dia">Día (glb)</option>
-                        <option value="m">Metros (m)</option>
-                        <option value="m2">Metros cuadrados (m²)</option>
-                        <option value="m3">Metros cúbicos (m³)</option>
-                        <option value="km">Kilómetro (km)</option>
-                        <option value="km2">Kilómetros cuadrados (km²)</option>
-                        <option value="otro">Otro</option>
-                      </select>
-                    </td>
+                      {/* UND */}
+                      <td className="p-1">
+                        <select
+                          className="w-full p-1 border border-gray-300 rounded"
+                          value={it.und}
+                          onChange={(e) =>
+                            handleChangeItem(i, "und", e.target.value)
+                          }
+                        >
+                          <option value="und">Unidad (UND)</option>
+                          <option value="glb">Global (glb)</option>
+                          <option value="dia">Día (glb)</option>
+                          <option value="m">Metros (m)</option>
+                          <option value="m2">Metros cuadrados (m²)</option>
+                          <option value="m3">Metros cúbicos (m³)</option>
+                          <option value="km">Kilómetro (km)</option>
+                          <option value="km2">Kilómetros cuadrados (km²)</option>
+                          <option value="otro">Otro</option>
+                        </select>
+                      </td>
 
-                    {/* CANT */}
-                    <td className="p-1">
-                      <input
-                        className={`w-full p-1 border rounded 
+                      {/* CANT */}
+                      <td className="p-1">
+                        <input
+                          className={`w-full p-1 border rounded 
                           border-gray-300`}
-                        type="number"
-                        value={it.cant}
-                        onChange={(e) => {
-                          handleChangeItem(i, "cant", parseFloat(e.target.value));
-                        }}
-                      />
-                    </td>
+                          type="number"
+                          value={it.cant}
+                          onChange={(e) => {
+                            handleChangeItem(i, "cant", parseFloat(e.target.value));
+                          }}
+                        />
+                      </td>
 
-                    {/* VR UNITARIO */}
-                    <td className="p-1">
-                      <input
-                        className={`w-full p-1 border rounded 
+                      {/* VR UNITARIO */}
+                      <td className="p-1">
+                        <input
+                          className={`w-full p-1 border rounded 
                           ${itemIncompleto && Number(it.unit) <= 0
-                            ? "border-red-500 ring-red-300"
-                            : "border-gray-300"
-                          }`}
-                        type="number"
-                        value={it.unit}
-                        onChange={(e) => {
-                          setErrores({ ...errores, items: false });
-                          handleChangeItem(i, "unit", parseFloat(e.target.value));
-                        }}
-                      />
-                    </td>
+                              ? "border-red-500 ring-red-300"
+                              : "border-gray-300"
+                            }`}
+                          type="number"
+                          value={it.unit}
+                          onChange={(e) => {
+                            setErrores({ ...errores, items: false });
+                            handleChangeItem(i, "unit", parseFloat(e.target.value));
+                          }}
+                        />
+                      </td>
 
-                    {/* VR TOTAL */}
-                    <td className="p-2 text-center font-semibold">
-                      {formatoCOP(it.cant * it.unit)}
-                    </td>
+                      {/* VR TOTAL */}
+                      <td className="p-2 text-center font-semibold">
+                        {formatoCOP(it.cant * it.unit)}
+                      </td>
 
-                    {/* ELIMINAR */}
-                    <td className="text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleEliminarItem(i)}
-                        className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md font-bold"
-                      >
-                        ✖
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {/* ELIMINAR */}
+                      <td className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleEliminarItem(i)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-1 py-1 rounded-md font-bold"
+                        >
+                          <X />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           <button
             type="button"
@@ -650,7 +653,7 @@ export default function Cotizaciones() {
 
 
         {/* NOTAS */}
-        <section className="bg-[#f9fbff] p-5 rounded-lg border border-[#e3e8f5]">
+        <section>
           <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
             Notas
           </h2>
@@ -664,7 +667,7 @@ export default function Cotizaciones() {
         </section>
 
         {/* PROYECTÓ */}
-        <section className="bg-[#f9fbff] p-5 rounded-lg border border-[#e3e8f5]">
+        <section>
           <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
             Proyectó
           </h2>
