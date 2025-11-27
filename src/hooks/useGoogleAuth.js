@@ -8,9 +8,23 @@ export default function useGoogleAuth() {
   const [token, setToken] = useState(localStorage.getItem("google_token"));
   const [loading, setLoading] = useState(true);
 
+  const checkGoogleToken = async (token) => {
+    if (!token) return false;
+
+    try {
+      const res = await fetch(
+        "https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=" + token
+      );
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
 
     const stored = localStorage.getItem("google_token");
+
     if (stored) {
       setToken(stored);
       setLoading(false);
@@ -34,8 +48,27 @@ export default function useGoogleAuth() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.replace("#", "?"));
-  }, []);
+    const validar = async () => {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      const valido = await checkGoogleToken(token);
+
+      if (!valido) {
+        console.warn("❌ Token inválido o expirado");
+        logout();
+        login();
+      } else {
+        console.log("✅ Token válido");
+      }
+
+      setLoading(false);
+    };
+
+    validar();
+  }, [token]);
 
   const login = () => {
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(
