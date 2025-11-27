@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useGoogle } from '../../context/GoogleContext';
 import { GOOGLE_CONFIG } from '../../config/google';
 import { today, formatNumber, formatFecha } from './utils/formatters';
 import { exportExcel } from './utils/Excel';
 import { computeWithSaldo } from './utils/computeSaldo';
 import { loadSheetData, saveSheetData, colorizeRows } from './services/googleSheets.service';
+import FiltersModal from './components/FiltersModal';
 
 const STORAGE_KEY = 'entradas_salidas';
 const FILE_ID_KEY = GOOGLE_CONFIG.ENTRADAS_SALIDAS_SPREADSHEET_ID;
@@ -23,11 +24,37 @@ const TYPE_SELECTED_COLORS = {
   Bancos: 'bg-green-100 text-green-900'
 };
 
+const initialFilters = {
+  tipo: "",
+  desde: "",
+  hasta: "",
+  texto: ""
+};
+
 export default function EntradasSalidas() {
   const { token, login, logout } = useGoogle();
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ fecha: '', tipo: 'Entrada', descripcion: '', valor: '' });
   const [editId, setEditId] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState(initialFilters);
+
+  const filteredItems = useMemo(() => {
+    return computeWithSaldo(
+      items.filter(item => {
+        const matchTipo = filters.tipo ? item.tipo === filters.tipo : true;
+
+        const matchDesde = filters.desde ? item.fecha >= filters.desde : true;
+        const matchHasta = filters.hasta ? item.fecha <= filters.hasta : true;
+
+        const matchTexto = filters.texto
+          ? item.descripcion?.toLowerCase().includes(filters.texto.toLowerCase())
+          : true;
+
+        return matchTipo && matchDesde && matchHasta && matchTexto;
+      })
+    );
+  }, [items, filters]);
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -39,8 +66,9 @@ export default function EntradasSalidas() {
   }, [items]);
 
   useEffect(() => {
-    if (!token) return;
-    loadFromDrive();
+    if (token) {
+      loadFromDrive();
+    }
   }, [token]);
 
   const handleChange = (e) => {
@@ -114,9 +142,9 @@ export default function EntradasSalidas() {
     setForm({ fecha: '', tipo: 'Entrada', valor: '', descripcion: '' });
   };
 
-  const totalSaldo = computeWithSaldo(items).slice(-1)[0]?.saldo ?? 0;
-  const totalEntradas = items.reduce((sum, it) => sum + (Number(it.entra) || 0), 0);
-  const totalSalidas = items.reduce((sum, it) => sum + (Number(it.sale) || 0), 0);
+  const totalSaldo = filteredItems.slice(-1)[0]?.saldo ?? 0;
+  const totalEntradas = filteredItems.reduce((sum, it) => sum + (Number(it.entra) || 0), 0);
+  const totalSalidas = filteredItems.reduce((sum, it) => sum + (Number(it.sale) || 0), 0);
 
   const loadFromDrive = async () => {
     try {
@@ -174,7 +202,7 @@ export default function EntradasSalidas() {
 
   return (
     <div className="max-w-4xl mx-auto text-gray-800 p-4">
-      <h1 className="text-center text-2xl font-semibold mb-4">Registro de Entradas y Salidas</h1>
+      <h1 className="text-center text-[#0051ff] text-2xl font-bold mb-4">Registro de Entradas y Salidas</h1>
 
       <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
 
@@ -261,8 +289,8 @@ export default function EntradasSalidas() {
             w-full
             text-xs sm:text-sm
             border-collapse
-            min-w-max       /* Mobile */
-            sm:min-w-full   /* Desktop */
+            min-w-max
+            sm:min-w-full
           "
           >
             <thead className="sticky top-0 z-20 bg-gray-100">
@@ -277,7 +305,7 @@ export default function EntradasSalidas() {
             </thead>
 
             <tbody>
-              {computeWithSaldo(items).length === 0 && (
+              {filteredItems.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center text-gray-400 py-3 border">
                     Sin datos. Agrega un registro.
@@ -285,7 +313,7 @@ export default function EntradasSalidas() {
                 </tr>
               )}
 
-              {computeWithSaldo(items).map((it) => {
+              {filteredItems.map((it) => {
                 const isSelected = editId === it.id;
                 const colorClasses = isSelected
                   ? TYPE_SELECTED_COLORS[it.tipo]
@@ -319,7 +347,7 @@ export default function EntradasSalidas() {
                 );
               })}
 
-              {items.length > 0 && (
+              {filteredItems.length > 0 && (
                 <tr className="sticky bottom-0 bg-gray-50 font-bold z-10">
                   <td colSpan={2} className="border px-3 py-2">TOTALES</td>
                   <td className="border px-3 py-2">{formatNumber(totalEntradas)}</td>
@@ -334,10 +362,25 @@ export default function EntradasSalidas() {
       </div>
 
       <div className="flex flex-wrap gap-2 my-4 items-center justify-center">
+
+        <button
+          onClick={() => setShowFilters(!showFilters)}
+          className="px-3 py-1 rounded bg-purple-600 text-white hover:scale-105"
+        >
+          Filtros
+        </button>
+
         <button onClick={saveToDrive} className="px-3 py-1 rounded bg-blue-600 text-white">
-          Guardar en Drive
+          Guardar
         </button>
       </div>
+
+      <FiltersModal
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        initialFilters={filters}
+        onApply={(newFilters) => setFilters(newFilters)}
+      />
     </div>
   );
 }
