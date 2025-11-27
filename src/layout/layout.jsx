@@ -42,6 +42,16 @@ export default function Layout() {
               Entradas / Salidas
             </NavLink>
 
+            <NavLink
+              to="/cotizaciones"
+              className={({ isActive }) =>
+                `font-medium px-3 py-2 rounded-md ${isActive ? "bg-white text-blue-600" : "hover:bg-white/20"
+                }`
+              }
+            >
+              Cotizaciones
+            </NavLink>
+
           </nav>
 
           <div className="mt-auto">
