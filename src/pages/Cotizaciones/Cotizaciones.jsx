@@ -82,9 +82,10 @@ export default function Cotizaciones() {
     if (!token) return;
     const folders = await listFolders(ROOT_FOLDER_ID, token);
 
-    const opciones = folders.map(f => f.name);
-    opciones.push("__manual__");
-
+    const opciones = [
+      "__manual__",
+      ...folders.map(f => f.name)
+    ];
     setDirigidoOpciones(opciones);
   }
 
@@ -394,79 +395,80 @@ export default function Cotizaciones() {
               </select>
             </label>
             {/* Dirigido a */}
-            <label className="flex flex-col font-medium">
-              Dirigido a:
-              {modoDirigidoManual ? (
-                <input
-                  data-error={errores.dirigido || false}
-                  className={`p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                    ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                  type="text"
-                  placeholder="Escribe un nombre"
-                  value={dirigido}
-                  onChange={(e) => {
-                    setErrores({ ...errores, dirigido: false });
-                    setDirigido(e.target.value);
-                  }}
-                  onBlur={() => {
-                    if (!dirigido.trim()) setModoDirigidoManual(false);
-                  }}
-                />
-              ) : (
-                <select
-                  data-error={errores.dirigido || false}
-                  className={`p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                    ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                  value={dirigido}
-                  onChange={(e) => {
-                    setErrores({ ...errores, dirigido: false });
-                    handleDirigidoChange(e.target.value);
-                  }}
-                >
-                  <option value="">Seleccione una opción</option>
-                  {dirigidoOpciones.length === 0 && (
-                    <option value="">Cargando carpetas...</option>
-                  )}
-                  {dirigidoOpciones.map((opt) =>
-                    opt === "__manual__" ? (
-                      <option key="manual" value="__manual__">
-                        ➕ Ingresar nombre
-                      </option>
-                    ) : (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    )
-                  )}
-                </select>
-              )}
-            </label>
-            {/* Referido */}
-            <label className="flex flex-col font-medium">
-              Referido:
+            <div className="flex flex-col font-medium">
+              <label>Dirigido a:</label>
+
               <div className="flex gap-2 items-center">
-                <input
-                  data-error={errores.referido || false}
-                  className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                    ${errores.referido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                  type="text"
-                  value={referido}
-                  onChange={(e) => {
-                    setErrores({ ...errores, referido: false });
-                    setReferido(e.target.value);
-                  }}
-                />
+                {modoDirigidoManual ? (
+                  <input
+                    data-error={errores.dirigido || false}
+                    className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+          ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
+                    type="text"
+                    placeholder="Escribe un nombre"
+                    value={dirigido}
+                    onChange={(e) => {
+                      setErrores({ ...errores, dirigido: false });
+                      setDirigido(e.target.value);
+                    }}
+                    onBlur={() => {
+                      if (!dirigido.trim()) setModoDirigidoManual(false);
+                    }}
+                  />
+                ) : (
+                  <select
+                    data-error={errores.dirigido || false}
+                    className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+          ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
+                    value={dirigido}
+                    onChange={(e) => {
+                      setErrores({ ...errores, dirigido: false });
+                      handleDirigidoChange(e.target.value);
+                    }}
+                  >
+                    <option value="">Seleccione una opción</option>
+                    {dirigidoOpciones.length === 0 && (
+                      <option value="">Cargando carpetas...</option>
+                    )}
+                    {dirigidoOpciones.map((opt) =>
+                      opt === "__manual__" ? (
+                        <option key="manual" value="__manual__">
+                          ➕ Ingresar nombre
+                        </option>
+                      ) : (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      )
+                    )}
+                  </select>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     setErrores({ ...errores, referido: false });
                     setReferido(dirigido);
                   }}
-                  className="px-3 py-2 bg-gray-200 rounded-md hover:bg-gray-300"
+                  className="px-3 py-2 bg-gray-200 rounded-md hover:bg-gray-300 shrink-0"
                 >
                   →
                 </button>
               </div>
+            </div>
+            {/* Referido */}
+            <label className="flex flex-col font-medium">
+              Referido:
+              <input
+                data-error={errores.referido || false}
+                className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+                    ${errores.referido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
+                type="text"
+                value={referido}
+                onChange={(e) => {
+                  setErrores({ ...errores, referido: false });
+                  setReferido(e.target.value);
+                }}
+              />
             </label>
             {/* Tiempo de entrega */}
             <label className="flex flex-col font-medium">
