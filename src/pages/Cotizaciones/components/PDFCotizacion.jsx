@@ -43,8 +43,9 @@ const PDFCotizacion = forwardRef(function PDFCotizacion(
           color: "#0051ff",
           margin: "5px 0 18px 0",
           borderBottom: "1px solid #0051ff",
-          paddingBottom: "3px",
+          paddingBottom: "6px",
           fontSize: "18px",
+          lineHeight: "1.4",
         }}
       >
         Cotización
@@ -88,20 +89,20 @@ const PDFCotizacion = forwardRef(function PDFCotizacion(
         <tbody>
           {items.map((it, i) => (
             <tr key={i}>
-              <td style={{ border: "1px solid #ccc", padding: "5px" }}>{it.desc}</td>
-              <td style={{ border: "1px solid #ccc", textAlign: "center", padding: "5px" }}>
+              <td style={{ border: "1px solid #ccc", padding: "5px", maxWidth: "280px", wordWrap: "break-word", overflowWrap: "break-word", whiteSpace: "normal", textAlign: "left" }}>{it.desc}</td>
+              <td style={{ border: "1px solid #ccc", textAlign: "center", padding: "5px", maxWidth: "280px", wordWrap: "break-word", overflowWrap: "break-word", whiteSpace: "normal" }}>
                 {it.und}
               </td>
-              <td style={{ border: "1px solid #ccc", textAlign: "center", padding: "5px" }}>
+              <td style={{ border: "1px solid #ccc", textAlign: "center", padding: "5px", maxWidth: "280px", wordWrap: "break-word", overflowWrap: "break-word", whiteSpace: "normal" }}>
                 {it.cant}
               </td>
-              <td style={{ border: "1px solid #ccc", textAlign: "right", padding: "5px" }}>
+              <td style={{ border: "1px solid #ccc", textAlign: "right", padding: "5px", maxWidth: "280px", wordWrap: "break-word", overflowWrap: "break-word", whiteSpace: "normal" }}>
                 {it.unit.toLocaleString("es-CO", {
                   style: "currency",
                   currency: "COP",
                 })}
               </td>
-              <td style={{ border: "1px solid #ccc", textAlign: "right", padding: "5px" }}>
+              <td style={{ border: "1px solid #ccc", textAlign: "right", padding: "5px", maxWidth: "280px", wordWrap: "break-word", overflowWrap: "break-word", whiteSpace: "normal" }}>
                 {(it.cant * it.unit).toLocaleString("es-CO", {
                   style: "currency",
                   currency: "COP",
@@ -137,7 +138,8 @@ const PDFCotizacion = forwardRef(function PDFCotizacion(
             marginBottom: "5px",
             borderBottom: "1px solid #0051ff",
             display: "inline-block",
-            paddingBottom: "2px",
+            paddingBottom: "5px",
+            lineHeight: "1.4",
           }}
         >
           Notas
@@ -163,7 +165,8 @@ const PDFCotizacion = forwardRef(function PDFCotizacion(
             marginBottom: "5px",
             borderBottom: "1px solid #0051ff",
             display: "inline-block",
-            paddingBottom: "2px",
+            paddingBottom: "5px",
+            lineHeight: "1.4",
           }}
         >
           Responsable / Aprobación
@@ -177,7 +180,7 @@ const PDFCotizacion = forwardRef(function PDFCotizacion(
             Cl. 28, Tuluá, Valle del Cauca
           </div>
           <div>ingetulsas@gmail.com</div>
-          <div><strong>Proyecto:</strong> {proyecto}</div>
+          <div><strong>Proyectó:</strong> {proyecto}</div>
         </div>
       </div>
     </div>
