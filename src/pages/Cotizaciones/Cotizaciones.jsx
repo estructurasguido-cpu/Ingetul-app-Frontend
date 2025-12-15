@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useDepartamentos } from "../../hooks/useDepartments";
 import { useGoogle } from "../../context/GoogleContext";
+import { useLoader } from "../../context/LoaderContext";
 import { GOOGLE_CONFIG } from "../../config/google";
 import PDFCotizacion from "./components/PDFCotizacion";
 import { getOrCreateFolder, listFolders, getCotizacionNumber, uploadPDFToDrive } from "./services/googleDrive.service";
@@ -39,6 +40,8 @@ export default function Cotizaciones() {
 
   const [dirigidoOpciones, setDirigidoOpciones] = useState([]);
   const [modoDirigidoManual, setModoDirigidoManual] = useState(false);
+
+  const { showLoader, hideLoader } = useLoader();
 
   // Mobile Inicio
 
@@ -214,6 +217,13 @@ export default function Cotizaciones() {
 
   const handleGenerarPDF = async (subirADrive = false) => {
     try {
+
+      showLoader(
+        subirADrive
+          ? "Subiendo cotización a Google Drive..."
+          : "Generando cotización en PDF..."
+      );
+
       const element = pdfRef.current;
       if (!element) return;
 
@@ -233,7 +243,7 @@ export default function Cotizaciones() {
 
       // Captura en alta resolución
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 1,
         useCORS: true,
         backgroundColor: "#ffffff",
         logging: false,
@@ -270,6 +280,10 @@ export default function Cotizaciones() {
       // Opción 1: Descargar localmente
       if (!subirADrive) {
         pdf.save(`${fechaISO}-${numero}-${referido}.pdf`);
+
+        showLoader("✅ PDF generado correctamente");
+
+        setTimeout(() => hideLoader(), 1500);
         return;
       }
 
@@ -290,13 +304,19 @@ export default function Cotizaciones() {
       });
 
       if (data.id) {
-        alert("✅ Cotización subida correctamente a Google Drive.");
+        showLoader("✅ Cotización subida correctamente");
       } else {
-        alert("❌ No se pudo subir el PDF a Google Drive.");
+        showLoader("❌ No se pudo subir la cotización");
       }
+
+      await new Promise(r => setTimeout(r, 80));
+      setTimeout(() => hideLoader(), 1500);
+
     } catch (err) {
       console.error("Error al generar o subir PDF:", err);
-      alert("❌ Error al generar o subir PDF. Revisa la consola para más detalles.");
+      showLoader("❌ Error al generar o subir el PDF");
+      await new Promise(r => setTimeout(r, 80));
+      setTimeout(() => hideLoader(), 1600);
     }
   };
 

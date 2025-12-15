@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useGoogle } from '../../context/GoogleContext';
+import { useLoader } from '../../context/LoaderContext';
 import { GOOGLE_CONFIG } from '../../config/google';
 import { today, formatNumber, formatFecha } from './utils/formatters';
 import { exportExcel } from './utils/Excel';
@@ -32,12 +33,14 @@ const initialFilters = {
 };
 
 export default function EntradasSalidas() {
-  const { token, login, logout } = useGoogle();
+  const { token, login, logout, loading } = useGoogle();
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ fecha: '', tipo: 'Entrada', descripcion: '', valor: '' });
   const [editId, setEditId] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState(initialFilters);
+  const { showLoader, hideLoader } = useLoader();
+
 
   const filteredItems = useMemo(() => {
     return computeWithSaldo(
@@ -66,10 +69,10 @@ export default function EntradasSalidas() {
   }, [items]);
 
   useEffect(() => {
-    if (token) {
+    if (!loading && token) {
       loadFromDrive();
     }
-  }, [token]);
+  }, [token, loading]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -174,9 +177,11 @@ export default function EntradasSalidas() {
   const saveToDrive = async () => {
     if (!token) return login();
 
-    const id = FILE_ID_KEY
+    const id = FILE_ID_KEY;
 
     try {
+      showLoader("Guardando datos en Google Sheets...");
+
       const rows = computeWithSaldo(items);
 
       const rowsConTotales = [
@@ -193,10 +198,24 @@ export default function EntradasSalidas() {
 
       await saveSheetData(id, token, rowsConTotales);
       await colorizeRows(id, token, rows);
-      alert("✅ Datos guardados correctamente en Google Sheets");
+
+      showLoader("✅ Datos guardados correctamente");
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      setTimeout(() => {
+        hideLoader();
+      }, 1300);
+
     } catch (err) {
       console.error(err);
-      alert("❌ Error al guardar en Google Sheets");
+
+      showLoader("❌ Error al guardar en Google Sheets");
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+      setTimeout(() => {
+        hideLoader();
+      }, 1600);
     }
   };
 
