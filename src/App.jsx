@@ -6,6 +6,7 @@ import EntradasSalidas from './pages/EntradasSalidas/EntradasSalidas.jsx';
 import Cotizaciones from './pages/Cotizaciones/Cotizaciones.jsx';
 import Cronograma from './pages/Cronograma/Cronograma.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import CuentasDeCobro from './pages/CuentasDeCobro/CuentasDeCobro.jsx';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="entradas-salidas" element={<EntradasSalidas />} />
           <Route path="cotizaciones" element={<Cotizaciones />} />
           <Route path="cronograma" element={<Cronograma />} />
+          <Route path="cuentas-de-cobro" element={<CuentasDeCobro />} />
         </Route>
       </Route>
 

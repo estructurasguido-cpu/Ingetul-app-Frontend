@@ -19,7 +19,7 @@ export default function Layout() {
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      <div className="flex h-screen transition-all duration-300 relative">
+      <div className="flex min-h-screen transition-all duration-300 relative">
         {/* Sidebar */}
         <aside
           className={`fixed top-0 left-0 h-full bg-blue-600 text-white p-5 flex flex-col shadow-lg transition-all duration-300 overflow-hidden z-50 ${open ? "w-56 translate-x-0" : "-translate-x-64 w-56"
@@ -50,6 +50,16 @@ export default function Layout() {
               }
             >
               Cotizaciones
+            </NavLink>
+
+            <NavLink
+              to="/cuentas-de-cobro"
+              className={({ isActive }) =>
+                `font-medium px-3 py-2 rounded-md ${isActive ? "bg-white text-blue-600" : "hover:bg-white/20"
+                }`
+              }
+            >
+              Cuentas de Cobro
             </NavLink>
 
           </nav>
