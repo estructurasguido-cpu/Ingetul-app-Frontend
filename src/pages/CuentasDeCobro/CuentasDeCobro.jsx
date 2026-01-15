@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { FileUp } from "lucide-react";
 import { today, numeroALetras, formatearFecha } from "./utils/formatters";
-import { BENEFICIARIOS } from "./constants/personas";
+import { BENEFICIARIOS } from "./constants/Enums";
 import { generarPDFVectorial } from "./utils/generarPDFVectorial";
 
 const safeParse = (json) => {
@@ -21,13 +21,14 @@ export default function CuentasDeCobro() {
     const [ciudad] = useState("Tuluá");
     const [departamento] = useState("Valle del Cauca");
 
-    const [empresaDeudora, setEmpresaDeudora] = useState("");
-    const [nitDeudor, setNitDeudor] = useState("");
-    const [tipoDeudor, setTipoDeudor] = useState("NIT");
+    const [deudorNombre, setDeudorNombre] = useState("");
+    const [deudorDocumento, setDeudorDocumento] = useState("");
+    const [deudorTipoDocumento, setDeudorTipoDocumento] = useState("NIT");
 
     const [beneficiario, setBeneficiario] = useState("INGETUL");
-    const [empresaBeneficiaria, setEmpresaBeneficiaria] = useState("INGETUL S.A.S");
-    const [nitBeneficiario, setNitBeneficiario] = useState("901298387-2");
+    const [beneficiarioNombre, setBeneficiarioNombre] = useState("INGETUL S.A.S");
+    const [beneficiarioTipoDocumento, setBeneficiarioTipoDocumento] = useState("NIT");
+    const [beneficiarioDocumento, setBeneficiarioDocumento] = useState("901298387-2")
 
     const [valorNumero, setValorNumero] = useState("");
     const [valorLetras, setValorLetras] = useState("");
@@ -41,8 +42,7 @@ export default function CuentasDeCobro() {
 
     const validarFormulario = () => {
         if (!fecha) return "La fecha es obligatoria.";
-        if (!empresaDeudora.trim()) return "El deudor es obligatorio.";
-        if (!nitDeudor.trim()) return "El DOC del deudor es obligatorio.";
+        if (!deudorNombre.trim()) return "El deudor es obligatorio.";
         if (!valorNumero || Number(valorNumero) <= 0) return "Debe ingresar un valor válido.";
         if (!concepto.trim()) return "Debe escribir el concepto.";
         if (!firmante) return "Debe seleccionar un firmante.";
@@ -61,12 +61,16 @@ export default function CuentasDeCobro() {
             ciudad,
             departamento,
             fecha: formatearFecha(fecha),
-            empresaDeudora,
-            nitDeudor,
-            tipoDeudor,
+
+            deudorNombre,
+            deudorDocumento: deudorDocumento?.trim() || null,
+            deudorTipoDocumento: deudorDocumento?.trim() ? deudorTipoDocumento : null,
+
             beneficiario,
-            empresaBeneficiaria,
-            nitBeneficiario,
+            beneficiarioNombre,
+            beneficiarioDocumento,
+            beneficiarioTipoDocumento,
+
             valorLetras,
             concepto,
             usarNotas,
@@ -79,7 +83,7 @@ export default function CuentasDeCobro() {
         const blob = new Blob([finalBytes], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
 
-        const nombreDeudorLimpio = empresaDeudora
+        const nombreDeudorLimpio = deudorNombre
             .replace(/[^\w\s-]/g, "")
             .replace(/\s+/g, "_")
             .toLowerCase();
@@ -98,9 +102,11 @@ export default function CuentasDeCobro() {
 
     useEffect(() => {
         const data = BENEFICIARIOS[beneficiario];
+
         if (data) {
-            setEmpresaBeneficiaria(data.empresa);
-            setNitBeneficiario(data.nit);
+            setBeneficiarioNombre(data.nombre);
+            setBeneficiarioDocumento(data.documento);
+            setBeneficiarioTipoDocumento(data.tipoDocumento);
         }
 
         if (beneficiario === "INGETUL") {
@@ -110,7 +116,6 @@ export default function CuentasDeCobro() {
         if (beneficiario === "GUIDO") {
             setFirmante("guido_personal");
         }
-
     }, [beneficiario]);
 
     useEffect(() => {
@@ -127,18 +132,20 @@ export default function CuentasDeCobro() {
     const handleLimpiar = () => {
         setFecha(today());
 
-        setEmpresaDeudora("");
-        setNitDeudor("");
+        setDeudorNombre("");
+        setDeudorDocumento("");
+        setDeudorTipoDocumento("NIT");
         setBeneficiario("INGETUL");
-        setEmpresaBeneficiaria("INGETUL S.A.S");
-        setNitBeneficiario("901298387-2");
+        setBeneficiarioNombre("INGETUL S.A.S");
+        setBeneficiarioDocumento("901298387-2");
+        setBeneficiarioTipoDocumento("NIT");
         setValorNumero("");
         setValorLetras("");
         setConcepto("");
         setUsarNotas(false);
         setNotas(`• En el momento de cancelar el proyecto en su totalidad se entregará la debida factura electrónica.
 • Los detalles técnicos de las exploraciones y los estudios se encuentran consignados en la propuesta económica anexa a este documento.`);
-        setFirmante("guido");
+        setFirmante("guido_ingetul");
 
         localStorage.removeItem(STORAGE_KEY);
     };
@@ -151,11 +158,13 @@ export default function CuentasDeCobro() {
         const data = safeParse(raw);
         if (!data) return;
 
-        if (data.empresaDeudora !== undefined) setEmpresaDeudora(data.empresaDeudora);
-        if (data.nitDeudor !== undefined) setNitDeudor(data.nitDeudor);
+        if (data.deudorNombre !== undefined) setDeudorNombre(data.deudorNombre);
+        if (data.deudorDocumento !== undefined) setDeudorDocumento(data.deudorDocumento);
+        if (data.deudorTipoDocumento !== undefined) setDeudorTipoDocumento(data.deudorTipoDocumento);
         if (data.beneficiario !== undefined) setBeneficiario(data.beneficiario);
-        if (data.empresaBeneficiaria !== undefined) setEmpresaBeneficiaria(data.empresaBeneficiaria);
-        if (data.nitBeneficiario !== undefined) setNitBeneficiario(data.nitBeneficiario);
+        if (data.beneficiarioNombre !== undefined) setBeneficiarioNombre(data.beneficiarioNombre);
+        if (data.beneficiarioDocumento !== undefined) setBeneficiarioDocumento(data.beneficiarioDocumento);
+        if (data.beneficiarioTipoDocumento !== undefined) setBeneficiarioTipoDocumento(data.beneficiarioTipoDocumento);
         if (data.valorNumero !== undefined) setValorNumero(data.valorNumero);
         if (data.valorLetras !== undefined) setValorLetras(data.valorLetras);
         if (data.concepto !== undefined) setConcepto(data.concepto);
@@ -170,12 +179,13 @@ export default function CuentasDeCobro() {
         const payload = {
             ciudad,
             departamento,
-            empresaDeudora,
-            nitDeudor,
-            tipoDeudor,
+            deudorNombre,
+            deudorDocumento,
+            deudorTipoDocumento,
             beneficiario,
-            empresaBeneficiaria,
-            nitBeneficiario,
+            beneficiarioNombre,
+            beneficiarioDocumento,
+            beneficiarioTipoDocumento,
             valorNumero,
             valorLetras,
             concepto,
@@ -191,12 +201,15 @@ export default function CuentasDeCobro() {
 
         return () => clearTimeout(t);
     }, [
-        empresaDeudora,
-        nitDeudor,
+        ciudad,
+        departamento,
+        deudorNombre,
+        deudorDocumento,
+        deudorTipoDocumento,
         beneficiario,
-        tipoDeudor,
-        empresaBeneficiaria,
-        nitBeneficiario,
+        beneficiarioNombre,
+        beneficiarioDocumento,
+        beneficiarioTipoDocumento,
         valorNumero,
         valorLetras,
         concepto,
@@ -236,17 +249,28 @@ export default function CuentasDeCobro() {
             <section className="mb-6">
                 <h2 className="font-bold text-lg mb-2">Deudor: </h2>
 
-                <input className="p-2 border rounded mb-2" placeholder="Empresa Deudora" value={empresaDeudora} onChange={(e) => setEmpresaDeudora(e.target.value)} />
-                {/* SELECTOR NIT / C.C. */}
+                <input
+                    className="p-2 border rounded mb-2"
+                    placeholder="Nombre del deudor"
+                    value={deudorNombre}
+                    onChange={(e) => setDeudorNombre(e.target.value)}
+                />
+
                 <select
                     className="p-2 border rounded mb-2"
-                    value={tipoDeudor}
-                    onChange={(e) => setTipoDeudor(e.target.value)}
+                    value={deudorTipoDocumento}
+                    onChange={(e) => setDeudorTipoDocumento(e.target.value)}
                 >
                     <option value="NIT">NIT</option>
                     <option value="CC">C.C.</option>
                 </select>
-                <input className="p-2 border rounded" placeholder="DOC. Deudor" value={nitDeudor} onChange={(e) => setNitDeudor(e.target.value)} />
+
+                <input
+                    className="p-2 border rounded"
+                    placeholder="Documento del deudor"
+                    value={deudorDocumento}
+                    onChange={(e) => setDeudorDocumento(e.target.value)}
+                />
             </section>
 
             {/* BENEFICIARIO */}
@@ -262,8 +286,17 @@ export default function CuentasDeCobro() {
                     <option value="GUIDO">Guido Victoria</option>
                 </select>
 
-                <input className="p-2 border rounded mb-2" value={empresaBeneficiaria} readOnly />
-                <input className="p-2 border rounded" value={nitBeneficiario} readOnly />
+                <input
+                    className="p-2 border rounded mb-2"
+                    value={beneficiarioNombre}
+                    readOnly
+                />
+
+                <input
+                    className="p-2 border rounded"
+                    value={beneficiarioDocumento}
+                    readOnly
+                />
             </section>
 
             {/* VALOR */}

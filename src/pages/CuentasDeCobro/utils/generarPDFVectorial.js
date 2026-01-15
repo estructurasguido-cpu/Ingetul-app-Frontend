@@ -1,29 +1,7 @@
 import { jsPDF } from "jspdf";
 import { PDFDocument } from "pdf-lib";
-import logoIngetul from "../../../assets/logos/ingetul.jpg";
-import { FIRMANTES } from "../constants/personas";
-
-import certguido from "../../../assets/pdfs/Certificacion-bancaria-Guido.pdf";
-import certingetul from "../../../assets/pdfs/Certificacion-bancaria-Ingetul.pdf";
-import rutingetul from "../../../assets/pdfs/RUT-INGETUL-3-12-25.pdf";
-import rutguido from "../../../assets/pdfs/RUT-GUIDO.pdf";
-
-async function loadImageAsDataURL(src) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        img.onload = () => {
-            const canvas = document.createElement("canvas");
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(img, 0, 0);
-            resolve(canvas.toDataURL("image/png"));
-        };
-        img.onerror = reject;
-        img.src = src;
-    });
-}
+import { obtenerFirmante } from "../services/firmantes.service";
+import { obtenerPDFsBeneficiario } from "../services/documentos.service";
 
 export async function generarPDFVectorial(data, archivoExtra) {
     const pdf = new jsPDF({
@@ -34,7 +12,6 @@ export async function generarPDFVectorial(data, archivoExtra) {
 
     pdf.setFont("Helvetica");
 
-    // ===== HEADER =====
     pdf.setFontSize(11);
     pdf.text(`${data.ciudad} – ${data.departamento}, ${data.fecha}`, 20, 15);
 
@@ -44,42 +21,45 @@ export async function generarPDFVectorial(data, archivoExtra) {
 
     pdf.setFontSize(12);
     pdf.setFont("Helvetica", "normal");
-    pdf.text(data.empresaDeudora, 108, 50, { align: "center" });
-    pdf.text(
-        `${data.tipoDeudor === "CC" ? "C.C." : "NIT."} ${data.nitDeudor}`,
-        108,
-        57,
-        { align: "center" }
-    );
+    pdf.text(data.deudorNombre, 108, 50, { align: "center" });
 
-    // ===== BENEFICIARIO =====
+    if (data.deudorDocumento) {
+        pdf.text(
+            `${data.deudorTipoDocumento === "CC" ? "C.C." : "NIT."} ${data.deudorDocumento}`,
+            108,
+            57,
+            { align: "center" }
+        );
+    }
+
     pdf.setFont("Helvetica", "bold");
     pdf.text("DEBE A:", 108, 72, { align: "center" });
 
     pdf.setFont("Helvetica", "normal");
-    pdf.text(data.empresaBeneficiaria, 108, 82, { align: "center" });
+    pdf.text(data.beneficiarioNombre, 108, 82, { align: "center" });
     pdf.text(
-        `${data.beneficiario === "GUIDO" ? "C.C." : "NIT."} ${data.nitBeneficiario}`,
+        `${data.beneficiarioTipoDocumento}. ${data.beneficiarioDocumento}`,
         108,
         90,
         { align: "center" }
     );
 
-    // ===== VALOR =====
     pdf.setFont("Helvetica", "bold");
     pdf.text("LA SUMA DE:", 108, 105, { align: "center" });
 
-    pdf.setFont("Helvetica", "bold");
-    pdf.text(data.valorLetras.trim().replace(/\.*$/, "") + ".", 20, 120, { maxWidth: 170 });
+    pdf.text(
+        data.valorLetras.trim().replace(/\.*$/, "") + ".",
+        20,
+        120,
+        { maxWidth: 170 }
+    );
 
-    // ===== CONCEPTO =====
     pdf.setFont("Helvetica", "bold");
     pdf.text("Por concepto de:", 20, 140);
 
     pdf.setFont("Helvetica", "normal");
     pdf.text(data.concepto, 20, 147, { maxWidth: 170 });
 
-    // ===== NOTAS =====
     if (data.usarNotas) {
         pdf.setFont("Helvetica", "bold");
         pdf.text("NOTAS:", 20, 170);
@@ -89,9 +69,7 @@ export async function generarPDFVectorial(data, archivoExtra) {
         pdf.text(lines, 20, 178);
     }
 
-    // ===== FIRMA =====
-    const firm = FIRMANTES[data.firmante] || FIRMANTES["guido_ingetul"];
-    const firmaDataURL = await loadImageAsDataURL(firm.firma);
+    const firm = await obtenerFirmante(data.firmante);
 
     const firmaY = 205;
     const lineaY = firmaY + 25;
@@ -100,7 +78,7 @@ export async function generarPDFVectorial(data, archivoExtra) {
     const texto3Y = texto2Y + 7;
     const texto4Y = texto3Y + 7;
 
-    pdf.addImage(firmaDataURL, "PNG", 20, firmaY, 45, 25);
+    pdf.addImage(firm.firmaBase64, "PNG", 20, firmaY, 45, 25);
     pdf.line(20, lineaY, 85, lineaY);
 
     pdf.setFont("Helvetica", "bold");
@@ -121,61 +99,28 @@ export async function generarPDFVectorial(data, archivoExtra) {
     }
 
     pdf.setFontSize(9);
-    pdf.text("Anexo a este documento va la certificación bancaria oficial.", 20, y + 5);
+    pdf.text(
+        "Anexo a este documento va la certificación bancaria oficial.",
+        20,
+        y + 5
+    );
 
     const baseBytes = pdf.output("arraybuffer");
     const pdfDoc = await PDFDocument.load(baseBytes);
 
-    const pages = pdfDoc.getPages();
-
-    if (data.beneficiario === "INGETUL") {
-        const logoBytes = await fetch(logoIngetul).then(r => r.arrayBuffer());
-        const logoImage = await pdfDoc.embedJpg(logoBytes);
-
-        const firstPage = pages[0];
-        const { width, height } = firstPage.getSize();
-
-        const scale = 0.35;
-        const dims = logoImage.scale(scale);
-
-        firstPage.drawImage(logoImage, {
-            x: (width - dims.width) / 2,
-            y: (height - dims.height) / 2,
-            width: dims.width,
-            height: dims.height,
-            opacity: 0.13,
-        });
-    }
-
-    const adjuntos = [];
-
-    if (data.beneficiario === "INGETUL") {
-        adjuntos.push(certingetul);
-        adjuntos.push(rutingetul);
-    }
-
-    if (data.beneficiario === "GUIDO") {
-        adjuntos.push(certguido);
-        adjuntos.push(rutguido);
-    }
+    const adjuntos = await obtenerPDFsBeneficiario(data.beneficiario);
 
     if (archivoExtra) {
-        adjuntos.push(archivoExtra);
+        adjuntos.push(await archivoExtra.arrayBuffer());
     }
 
-    for (const extra of adjuntos) {
-        let bytes;
-
-        if (extra.arrayBuffer) {
-            bytes = await extra.arrayBuffer();
-        } else {
-            bytes = await fetch(extra).then(r => r.arrayBuffer());
-        }
-
+    for (const bytes of adjuntos) {
         const extraPdf = await PDFDocument.load(bytes);
-        const extraPages = await pdfDoc.copyPages(extraPdf, extraPdf.getPageIndices());
-
-        extraPages.forEach(p => pdfDoc.addPage(p));
+        const pages = await pdfDoc.copyPages(
+            extraPdf,
+            extraPdf.getPageIndices()
+        );
+        pages.forEach(p => pdfDoc.addPage(p));
     }
 
     return await pdfDoc.save();
