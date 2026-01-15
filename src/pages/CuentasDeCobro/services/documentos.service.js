@@ -1,4 +1,4 @@
-import { supabase } from "../../../services/Supabaseclient";
+import { supabase } from "../../../services/supabaseClient";
 
 const BUCKET = "private-assets";
 
