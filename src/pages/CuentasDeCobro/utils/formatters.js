@@ -4,92 +4,104 @@ export function today() {
 }
 
 export function numeroALetras(num) {
-    if (!num || num === 0) return "CERO PESOS";
+    if (num === null || num === undefined || isNaN(num)) return "";
 
-    const unidades = [
-        "", "uno", "dos", "tres", "cuatro", "cinco",
-        "seis", "siete", "ocho", "nueve", "tiene",
-        "once", "doce", "trece", "catorce", "quince",
-        "dieciséis", "diecisiete", "dieciocho", "diecinueve"
+    const entero = Math.floor(Number(num));
+    const centavos = Math.round((Number(num) - entero) * 100);
+
+    if (entero === 0) {
+        return "CERO PESOS (0 COP)";
+    }
+
+    const unidades = ["", "uno", "dos", "tres", "cuatro", "cinco",
+        "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince",
+        "dieciséis", "diecisiete", "dieciocho", "diecinueve",
     ];
 
-    const veintis = [
-        "", "", "veintidós", "veintitrés", "veinticuatro",
-        "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve"
+    const veintis = ["veinte", "veintiuno", "veintidós", "veintitrés",
+        "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve",
     ];
 
     const decenas = [
-        "", "", "veinte", "treinta", "cuarenta",
-        "cincuenta", "sesenta", "setenta", "ochenta", "noventa"
+        "", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa",
     ];
 
-    const centenas = [
-        "", "ciento", "doscientos", "trescientos",
-        "cuatrocientos", "quinientos", "seiscientos",
-        "setecientos", "ochocientos", "novecientos"
+    const centenas = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos",
+        "seiscientos", "setecientos", "ochocientos", "novecientos",
     ];
 
-    function convertirGrupos(n) {
-        let salida = "";
-
+    function convertirGrupo(n) {
+        if (n === 0) return "";
         if (n === 100) return "cien";
 
+        let texto = "";
+
         if (n > 99) {
-            salida += centenas[Math.floor(n / 100)] + " ";
+            texto += centenas[Math.floor(n / 100)] + " ";
             n = n % 100;
         }
 
-        if (n >= 21 && n <= 29) {
-            salida += veintis[n - 20];
-            return salida.trim();
+        if (n >= 20 && n <= 29) {
+            texto += veintis[n - 20];
+            return texto.trim();
         }
 
-        if (n === 20) return (salida + "veinte").trim();
-
-        if (n > 19) {
-            salida += decenas[Math.floor(n / 10)];
-            if (n % 10 !== 0) salida += " y " + unidades[n % 10];
-        } else {
-            salida += unidades[n];
+        if (n >= 30) {
+            texto += decenas[Math.floor(n / 10)];
+            if (n % 10 !== 0) texto += " y " + unidades[n % 10];
+            return texto.trim();
         }
 
-        return salida.trim();
+        texto += unidades[n];
+        return texto.trim();
     }
 
-    const millones = Math.floor(num / 1_000_000);
-    const miles = Math.floor((num % 1_000_000) / 1_000);
-    const resto = num % 1_000;
+    const millones = Math.floor(entero / 1_000_000);
+    const miles = Math.floor((entero % 1_000_000) / 1_000);
+    const resto = entero % 1_000;
 
     let letras = "";
 
     if (millones > 0) {
-        letras += millones === 1
-            ? "un millón "
-            : convertirGrupos(millones) + " millones ";
+        letras +=
+            millones === 1
+                ? "un millón "
+                : convertirGrupo(millones) + " millones ";
     }
 
     if (miles > 0) {
-        letras += miles === 1
-            ? "mil "
-            : convertirGrupos(miles) + " mil ";
+        letras +=
+            miles === 1 ? "mil " : convertirGrupo(miles) + " mil ";
     }
 
     if (resto > 0) {
-        letras += convertirGrupos(resto);
+        letras += convertirGrupo(resto);
     }
 
-    letras = letras.replace(/\s+/g, " ").trim();
+    letras = letras.trim();
 
-    // ===========================================
-    // REGLA: agregar "DE PESOS" cuando corresponde
-    // ===========================================
-    const terminaEnMillonExacto = (miles === 0 && resto === 0 && millones > 0);
+    letras = letras.replace(/\buno\b$/, "un");
 
-    const sufijo = terminaEnMillonExacto
-        ? "DE PESOS"
-        : "PESOS";
+    const terminaEnMillonExacto =
+        millones > 0 && miles === 0 && resto === 0;
 
-    return `${letras.toUpperCase()} ${sufijo} (${num.toLocaleString("es-CO")} COP)`;
+    const esSingular = entero === 1;
+
+    let resultado;
+
+    if (esSingular) {
+        resultado = `${letras.toUpperCase()} PESO`;
+    } else if (terminaEnMillonExacto) {
+        resultado = `${letras.toUpperCase()} DE PESOS`;
+    } else {
+        resultado = `${letras.toUpperCase()} PESOS`;
+    }
+
+    if (centavos > 0) {
+        resultado += ` CON ${centavos}/100`;
+    }
+
+    return `${resultado} (${entero.toLocaleString("es-CO")} COP)`;
 }
 
 const MESES = [
