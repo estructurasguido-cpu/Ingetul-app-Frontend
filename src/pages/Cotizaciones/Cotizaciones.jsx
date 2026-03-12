@@ -1,18 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import { X } from "lucide-react";
 import { useDepartamentos } from "../../hooks/useDepartments";
+import { useItemsCotizacion } from "./hooks/useItemsCotizacion"
 import { useGoogle } from "../../context/GoogleContext";
 import { useLoader } from "../../context/LoaderContext";
 import { GOOGLE_CONFIG } from "../../config/google";
-import PDFCotizacion from "./components/PDFCotizacion";
 import { getOrCreateFolder, listFolders, getCotizacionNumber, uploadPDFToDrive } from "./services/googleDrive.service";
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
+import { getItemsCatalog } from "./services/items.service";
+import { generarPDFCotizacion } from "./utils/generarPDFCotizacion";
+import { DatosGeneralesUI, ItemsTableUI, AccionesUI, NotasUI, ResponsableUI, BotonFlotanteUI, ModalItemsCatalogo } from "./components/index"
 
 const ROOT_FOLDER_ID = GOOGLE_CONFIG.COTIZACIONES_ROOT_FOLDER_ID
 
 const STORAGE_KEY = 'form_cotizacion';
 const STORAGE_BACKUP_KEY = "form_cotizacion_backup";
+
+const NOTAS_DEFAULT = `• Esta cotización tiene una validez de 30 días.
+• La forma de pago será 50% anticipo y el saldo contra entrega.
+• Esta cotización no incluye impuestos.
+• Las observaciones de la curaduría urbana que impliquen modificaciones arquitectónicas con impacto significativo en el modelo estructural (cambio de ejes, bordes de losas, adición o retiro de columnas, entre otros) generarán un cobro adicional por el rediseño estructural correspondiente y las nuevas impresiones; no se inician correcciones hasta no haber pactado el valor que esta actividad genere.`;
+
 
 function safeParse(json) {
   try {
@@ -28,13 +34,10 @@ export default function Cotizaciones() {
   const [referido, setReferido] = useState("");
   const [tiempoDeEntrega, setTiempoDeEntrega] = useState("");
   const [objeto, setObjeto] = useState("");
-  const [notas, setNotas] = useState(`• Esta cotización tiene una validez de 30 días.
-• La forma de pago será 50% anticipo y el saldo contra entrega.
-• Esta cotización no incluye impuestos.`);
-  const [proyecto, setProyecto] = useState("");
-  const [items, setItems] = useState([
-    { desc: "", und: "und", cant: 1, unit: 0 },
-  ]);
+  const [notas, setNotas] = useState(NOTAS_DEFAULT);
+  const [responsable, setResponsable] = useState("");
+  const [itemsCatalogo, setItemsCatalogo] = useState([]);
+  const [modalCatalogo, setModalCatalogo] = useState(false);
 
   const [errores, setErrores] = useState({});
 
@@ -42,8 +45,6 @@ export default function Cotizaciones() {
   const [modoDirigidoManual, setModoDirigidoManual] = useState(false);
 
   const { showLoader, hideLoader } = useLoader();
-
-  // Mobile Inicio
 
   const [pos, setPos] = useState({ x: 20, y: 80 });
   const [dragging, setDragging] = useState(false);
@@ -69,12 +70,9 @@ export default function Cotizaciones() {
 
   const handleTouchEnd = () => setDragging(false);
 
-  // Mobile Final
-
   const { token } = useGoogle();
   const { departamentos, ciudades, departamentoSel, setDepartamentoSel, ciudadSel, setCiudadSel } = useDepartamentos();
-
-  const pdfRef = useRef();
+  const { items, setItems, agregarItem, eliminarItem, cambiarItem, limpiarItems } = useItemsCotizacion();
 
   const formatoCOP = (valor) =>
     valor.toLocaleString("es-CO", { style: "currency", currency: "COP" });
@@ -118,8 +116,6 @@ export default function Cotizaciones() {
     if (token) cargarCarpetasDirigido();
   }, [token]);
 
-  // --- PERSISTENCIA EN LOCALSTORAGE ---
-
   useEffect(() => {
     const backup = localStorage.getItem(STORAGE_BACKUP_KEY);
     const raw = backup ?? localStorage.getItem(STORAGE_KEY);
@@ -132,7 +128,7 @@ export default function Cotizaciones() {
     if (data.tiempoDeEntrega !== undefined) setTiempoDeEntrega(String(data.tiempoDeEntrega));
     if (data.objeto !== undefined) setObjeto(data.objeto);
     if (data.notas !== undefined) setNotas(data.notas);
-    if (data.proyecto !== undefined) setProyecto(data.proyecto);
+    if (data.responsable !== undefined) setResponsable(data.responsable);
     if (data.departamentoSel !== undefined) setDepartamentoSel(data.departamentoSel);
     if (data.ciudadSel !== undefined) setCiudadSel(data.ciudadSel);
     if (Array.isArray(data.items) && data.items.length) {
@@ -142,6 +138,13 @@ export default function Cotizaciones() {
           und: it?.und ?? "und",
           cant: Number(it?.cant ?? 0),
           unit: Number(it?.unit ?? 0),
+          unitMode: it?.unitMode ?? "fixed",
+          percentEditing: Boolean(it?.percentEditing ?? false),
+          baseIndex:
+            it?.baseIndex === "" || it?.baseIndex === undefined
+              ? ""
+              : Number(it.baseIndex),
+          percent: Number(it?.percent ?? 0),
         }))
       );
     }
@@ -152,38 +155,32 @@ export default function Cotizaciones() {
   useEffect(() => {
     const payload = {
       dirigido, referido, tiempoDeEntrega, objeto, notas,
-      proyecto, departamentoSel, ciudadSel, items, _ts: Date.now(),
+      responsable, departamentoSel, ciudadSel, items, _ts: Date.now(),
     };
     const t = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     }, 300);
     return () => clearTimeout(t);
-  }, [dirigido, referido, tiempoDeEntrega, objeto, notas, proyecto, departamentoSel, ciudadSel, items]);
+  }, [dirigido, referido, tiempoDeEntrega, objeto, notas, responsable, departamentoSel, ciudadSel, items]);
 
-  // --- FIN PERSISTENCIA EN LOCALSTORAGE ---
+  useEffect(() => {
+    async function cargarItemsCatalogo() {
+      try {
+        const data = await getItemsCatalog();
+        setItemsCatalogo(data || []);
+      } catch (err) {
+        console.error("Error cargando catálogo de items", err);
+      }
+    }
+
+    cargarItemsCatalogo();
+  }, []);
 
   const granTotal = items.reduce((sum, it) => sum + it.cant * it.unit, 0);
-
-  const handleAgregarItem = () => {
-    setItems([...items, { desc: "", und: "und", cant: 1, unit: 0 }]);
-  };
-
-  const handleEliminarItem = (i) => {
-    const newItems = [...items];
-    newItems.splice(i, 1);
-    setItems(newItems);
-  };
-
-  const handleChangeItem = (index, field, value) => {
-    const newItems = [...items];
-    newItems[index][field] = value;
-    setItems(newItems);
-  };
 
   function validarFormulario() {
     const nuevoError = {};
 
-    // Campos obligatorios
     if (!departamentoSel) nuevoError.departamento = true;
     if (!ciudadSel) nuevoError.ciudad = true;
     if (!dirigido.trim()) nuevoError.dirigido = true;
@@ -217,6 +214,7 @@ export default function Cotizaciones() {
 
   const handleGenerarPDF = async (subirADrive = false) => {
     try {
+      if (!validarFormulario()) return;
 
       showLoader(
         subirADrive
@@ -224,52 +222,33 @@ export default function Cotizaciones() {
           : "Generando cotización en PDF..."
       );
 
-      const element = pdfRef.current;
-      if (!element) return;
-
       if (!token && subirADrive) {
         alert("⚠️ Debes conectar tu cuenta de Google Drive antes de subir el PDF.");
+        hideLoader();
         return;
       }
 
-      // Mostrar temporalmente el PDF oculto fuera de pantalla
-      const prevDisplay = element.style.display;
-      element.style.display = "block";
-      element.style.position = "absolute";
-      element.style.left = "-9999px";
+      const dataPDF = {
+        fecha,
+        ciudad: ciudadSel,
+        departamento:
+          departamentos.find(d => d.id == departamentoSel)?.name || "",
+        dirigido,
+        referido,
+        tiempoDeEntrega,
+        objeto,
+        notas,
+        items,
+        granTotal,
+        responsable,
+      };
 
-      // Pequeña espera para renderizado estable
-      await new Promise((res) => setTimeout(res, 400));
+      const pdfBytes = await generarPDFCotizacion(dataPDF);
 
-      // Captura en alta resolución
-      const canvas = await html2canvas(element, {
-        scale: 1,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      });
+      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
 
-      // Restaurar visibilidad original
-      element.style.display = prevDisplay;
-      element.style.position = "";
-      element.style.left = "";
-
-      // Generar el PDF con formato A4 exacto
-      const imgData = canvas.toDataURL("image/png", 1.0);
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      // Añadimos la imagen en posición exacta (0,0)
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-
-      // Generar el blob del PDF
-      const pdfBlob = pdf.output("blob");
-
-      // Genera fecha
       const fechaISO = new Date().toISOString().split("T")[0];
 
-      // Genera número
       const numero = await getCotizacionNumber(
         fechaISO,
         referido,
@@ -277,45 +256,52 @@ export default function Cotizaciones() {
         ROOT_FOLDER_ID
       );
 
-      // Opción 1: Descargar localmente
+      const referidoLimpio = referido
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "_");
+
+      const nombreArchivo = `${fechaISO}-${numero}-${referidoLimpio}.pdf`;
+
       if (!subirADrive) {
-        pdf.save(`${fechaISO}-${numero}-${referido}.pdf`);
+        const url = URL.createObjectURL(pdfBlob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = nombreArchivo;
+        a.click();
+
+        URL.revokeObjectURL(url);
 
         showLoader("✅ PDF generado correctamente");
-
-        setTimeout(() => hideLoader(), 1500);
+        setTimeout(() => hideLoader(), 1200);
         return;
       }
 
-      // Opción 2: Subir a Google Drive
-      const nombreArchivo = `${fechaISO}-${numero}.pdf`;
       const personaFolderId = await getOrCreateFolder(
         ROOT_FOLDER_ID,
         referido || "SinNombre",
         token
       );
 
-      const data = await uploadPDFToDrive({
+      const upload = await uploadPDFToDrive({
         pdfBlob,
         token,
         folderId: personaFolderId,
         filename: nombreArchivo,
-        isIphone: esIphone()
+        isIphone: esIphone(),
       });
 
-      if (data.id) {
+      if (upload?.id) {
         showLoader("✅ Cotización subida correctamente");
       } else {
         showLoader("❌ No se pudo subir la cotización");
       }
 
-      await new Promise(r => setTimeout(r, 80));
       setTimeout(() => hideLoader(), 1500);
 
     } catch (err) {
       console.error("Error al generar o subir PDF:", err);
       showLoader("❌ Error al generar o subir el PDF");
-      await new Promise(r => setTimeout(r, 80));
       setTimeout(() => hideLoader(), 1600);
     }
   };
@@ -349,12 +335,10 @@ export default function Cotizaciones() {
     setReferido("");
     setTiempoDeEntrega("");
     setObjeto("");
-    setNotas(`• Esta cotización tiene una validez de 30 días.
-• La forma de pago será 50% anticipo y el saldo contra entrega.
-• Esta cotización no incluye impuestos.`);
-    setProyecto("");
+    setNotas(NOTAS_DEFAULT);
+    setResponsable("");
 
-    setItems([{ desc: "", und: "und", cant: 1, unit: 0 }]);
+    limpiarItems();
     localStorage.removeItem(STORAGE_KEY);
   };
 
@@ -366,430 +350,79 @@ export default function Cotizaciones() {
       </h1>
 
       <form className="flex flex-col gap-8">
-        {/* DATOS GENERALES */}
-        <section>
-          <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
-            Datos Generales
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-            <label className="flex flex-col font-medium">
-              Fecha:
-              <input
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                type="text"
-                value={fecha}
-                readOnly
-              />
-            </label>
-            {/* Departamento */}
-            <label className="flex flex-col font-medium">
-              Departamento:
-              <select
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={departamentoSel}
-                onChange={(e) => setDepartamentoSel(e.target.value)}
-              >
-                <option value="">Seleccione un departamento</option>
-                {departamentos.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {/* Ciudad */}
-            <label className="flex flex-col font-medium">
-              Ciudad:
-              <select
-                disabled={!ciudades.length}
-                className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                value={ciudadSel}
-                onChange={(e) => setCiudadSel(e.target.value)}
-              >
-                <option value="">Seleccione una ciudad</option>
-                {ciudades.map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {/* Dirigido a */}
-            <div className="flex flex-col font-medium">
-              <label>Dirigido a:</label>
+        <DatosGeneralesUI
+          fecha={fecha}
+          departamentos={departamentos}
+          ciudades={ciudades}
+          departamentoSel={departamentoSel}
+          setDepartamentoSel={setDepartamentoSel}
+          ciudadSel={ciudadSel}
+          setCiudadSel={setCiudadSel}
+          dirigido={dirigido}
+          setDirigido={setDirigido}
+          referido={referido}
+          setReferido={setReferido}
+          dirigidoOpciones={dirigidoOpciones}
+          modoDirigidoManual={modoDirigidoManual}
+          setModoDirigidoManual={setModoDirigidoManual}
+          handleDirigidoChange={handleDirigidoChange}
+          tiempoDeEntrega={tiempoDeEntrega}
+          setTiempoDeEntrega={setTiempoDeEntrega}
+          objeto={objeto}
+          setObjeto={setObjeto}
+          errores={errores}
+          setErrores={setErrores}
+        />
 
-              <div className="flex gap-2 items-center">
-                {modoDirigidoManual ? (
-                  <input
-                    data-error={errores.dirigido || false}
-                    className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-          ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                    type="text"
-                    placeholder="Escribe un nombre"
-                    value={dirigido}
-                    onChange={(e) => {
-                      setErrores({ ...errores, dirigido: false });
-                      setDirigido(e.target.value);
-                    }}
-                    onBlur={() => {
-                      if (!dirigido.trim()) setModoDirigidoManual(false);
-                    }}
-                  />
-                ) : (
-                  <select
-                    data-error={errores.dirigido || false}
-                    className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-          ${errores.dirigido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                    value={dirigido}
-                    onChange={(e) => {
-                      setErrores({ ...errores, dirigido: false });
-                      handleDirigidoChange(e.target.value);
-                    }}
-                  >
-                    <option value="">Seleccione una opción</option>
-                    {dirigidoOpciones.length === 0 && (
-                      <option value="">Cargando carpetas...</option>
-                    )}
-                    {dirigidoOpciones.map((opt) =>
-                      opt === "__manual__" ? (
-                        <option key="manual" value="__manual__">
-                          ➕ Ingresar nombre
-                        </option>
-                      ) : (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      )
-                    )}
-                  </select>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrores({ ...errores, referido: false });
-                    setReferido(dirigido);
-                  }}
-                  className="px-3 py-2 bg-gray-200 rounded-md hover:bg-gray-300 shrink-0"
-                >
-                  →
-                </button>
-              </div>
-            </div>
-            {/* Referido */}
-            <label className="flex flex-col font-medium">
-              Referido:
-              <input
-                data-error={errores.referido || false}
-                className={`flex-1 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                    ${errores.referido ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                type="text"
-                value={referido}
-                onChange={(e) => {
-                  setErrores({ ...errores, referido: false });
-                  setReferido(e.target.value);
-                }}
-              />
-            </label>
-            {/* Tiempo de entrega */}
-            <label className="flex flex-col font-medium">
-              Tiempo de entrega:
-              <input
-                data-error={errores.tiempoDeEntrega || false}
-                className={`p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                  ${errores.tiempoDeEntrega ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                type="number"
-                value={tiempoDeEntrega}
-                onChange={(e) => {
-                  setErrores({ ...errores, tiempoDeEntrega: false });
-                  setTiempoDeEntrega(e.target.value);
-                }}
-              />
-            </label>
-            {/* Objeto */}
-            <label className="flex flex-col font-medium mt-4 col-span-full">
-              Objeto:
-              <textarea
-                rows="2"
-                data-error={errores.objeto || false}
-                className={`p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                  ${errores.objeto ? "border-red-500 ring-red-300" : "border-gray-300"}`}
-                value={objeto}
-                onChange={(e) => {
-                  setErrores({ ...errores, objeto: false });
-                  setObjeto(e.target.value);
-                }}
-              ></textarea>
-            </label>
-          </div>
-        </section>
+        <ItemsTableUI
+          items={items}
+          errores={errores}
+          formatoCOP={formatoCOP}
+          handleAgregarItem={agregarItem}
+          handleEliminarItem={eliminarItem}
+          handleChangeItem={cambiarItem}
+          setErrores={setErrores}
+          itemsCatalogo={itemsCatalogo}
+          onOpenCatalogo={() => setModalCatalogo(true)}
+        />
 
-        {/* ÍTEMS */}
-        <section >
-          <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
-            Ítems
-          </h2>
+        <NotasUI
+          notas={notas}
+          setNotas={setNotas}
+          notasDefault={NOTAS_DEFAULT}
+        />
 
-          <div className="w-full overflow-x-auto sm:overflow-visible">
-            <table
-              data-error={errores.items || false}
-              className={`w-full border-collapse text-sm transition-all
-              ${errores.items ? "border-2 border-red-500 rounded-lg" : ""}`}
-            >
-              <thead>
-                <tr>
-                  {[
-                    "Descripción",
-                    "UND",
-                    "Cant",
-                    "Vr. Unitario",
-                    "Vr. Total",
-                    "",
-                  ].map((t) => (
-                    <th
-                      key={t}
-                      className="bg-[#0051ff] text-white p-2 text-center font-semibold"
-                    >
-                      {t}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+        <ResponsableUI
+          responsable={responsable}
+          setResponsable={setResponsable}
+        />
 
-              <tbody>
-                {items.map((it, i) => {
-                  const itemIncompleto =
-                    errores.items &&
-                    (it.desc.trim() === "" || Number(it.unit) <= 0);
+        <AccionesUI
+          onGenerarPDF={() => {
+            if (validarFormulario()) handleGenerarPDF(false);
+          }}
+          onSubirDrive={() => {
+            if (validarFormulario()) handleGenerarPDF(true);
+          }}
+          onLimpiar={handleLimpiar}
+        />
 
-                  return (
-                    <tr
-                      key={i}
-                      className={`border border-gray-300 transition-all 
-                      ${itemIncompleto ? "bg-red-50" : ""}`}
-                    >
-                      {/* DESCRIPCIÓN */}
-                      <td className="p-1">
-                        <input
-                          className={`w-full p-1 border rounded 
-                          ${itemIncompleto && it.desc.trim() === ""
-                              ? "border-red-500 ring-red-300"
-                              : "border-gray-300"
-                            }`}
-                          type="text"
-                          value={it.desc}
-                          onChange={(e) => {
-                            setErrores({ ...errores, items: false });
-                            handleChangeItem(i, "desc", e.target.value);
-                          }}
-                        />
-                      </td>
-
-                      {/* UND */}
-                      <td className="p-1">
-                        <select
-                          className="w-full p-1 border border-gray-300 rounded"
-                          value={it.und}
-                          onChange={(e) =>
-                            handleChangeItem(i, "und", e.target.value)
-                          }
-                        >
-                          <option value="und">Unidad (UND)</option>
-                          <option value="glb">Global (glb)</option>
-                          <option value="dia">Día (glb)</option>
-                          <option value="m">Metros (m)</option>
-                          <option value="m2">Metros cuadrados (m²)</option>
-                          <option value="m3">Metros cúbicos (m³)</option>
-                          <option value="km">Kilómetro (km)</option>
-                          <option value="km2">Kilómetros cuadrados (km²)</option>
-                          <option value="otro">Otro</option>
-                        </select>
-                      </td>
-
-                      {/* CANT */}
-                      <td className="p-1">
-                        <input
-                          className={`w-full p-1 border rounded 
-                          border-gray-300`}
-                          type="number"
-                          value={it.cant}
-                          onChange={(e) => {
-                            handleChangeItem(i, "cant", parseFloat(e.target.value));
-                          }}
-                        />
-                      </td>
-
-                      {/* VR UNITARIO */}
-                      <td className="p-1">
-                        <input
-                          className={`w-full p-1 border rounded 
-                          ${itemIncompleto && Number(it.unit) <= 0
-                              ? "border-red-500 ring-red-300"
-                              : "border-gray-300"
-                            }`}
-                          type="number"
-                          value={it.unit}
-                          onChange={(e) => {
-                            setErrores({ ...errores, items: false });
-                            handleChangeItem(i, "unit", parseFloat(e.target.value));
-                          }}
-                        />
-                      </td>
-
-                      {/* VR TOTAL */}
-                      <td className="p-2 text-center font-semibold">
-                        {formatoCOP(it.cant * it.unit)}
-                      </td>
-
-                      {/* ELIMINAR */}
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleEliminarItem(i)}
-                          className="bg-red-500 hover:bg-red-600 text-white px-1 py-1 rounded-md font-bold"
-                        >
-                          <X />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setErrores({ ...errores, items: false });
-              handleAgregarItem();
-            }}
-            className="mt-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg"
-          >
-            + Agregar ítem
-          </button>
-
-          <p className="text-right text-lg font-bold mt-4">
-            Total: {formatoCOP(granTotal)}
-          </p>
-        </section>
-
-
-        {/* NOTAS */}
-        <section>
-          <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
-            Notas
-          </h2>
-
-          <textarea
-            rows="4"
-            className="p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full"
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-          ></textarea>
-        </section>
-
-        {/* PROYECTÓ */}
-        <section>
-          <h2 className="text-[#0051ff] text-xl font-semibold border-b border-blue-100 pb-1 mb-4">
-            Proyectó
-          </h2>
-
-          <select
-            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            value={proyecto}
-            onChange={(e) => setProyecto(e.target.value)}
-          >
-            <option value="">Seleccione</option>
-            <option value="G">G</option>
-            <option value="J">J</option>
-            <option value="D.G.">D.G.</option>
-            <option value="D">D</option>
-            <option value="C">C</option>
-          </select>
-        </section>
-
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex gap-2 mb-2 sm:mb-0">
-            <button
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-lg font-semibold"
-              type="button"
-              onClick={() => {
-                if (validarFormulario()) handleGenerarPDF(false);
-              }}
-            >
-              Generar PDF
-            </button>
-            <button
-              className="bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-lg font-semibold"
-              type="button"
-              onClick={() => {
-                if (validarFormulario()) handleGenerarPDF(true);
-              }}
-            >
-              Subir a Google Drive
-            </button>
-          </div>
-          <div>
-            <button
-              type="button"
-              onClick={handleLimpiar}
-              className="bg-gray-300 hover:bg-gray-400 text-black px-5 py-3 rounded-lg font-semibold"
-            >
-              Limpiar
-            </button>
-          </div>
-        </div>
       </form>
 
-      {/* BOTÓN FLOTANTE MÓVIL */}
-      <div
-        className="sm:hidden"
-        style={{
-          position: "fixed",
-          top: pos.y,
-          left: pos.x,
-          zIndex: 9999,
-          touchAction: "none",
-          userSelect: "none",
-        }}
+      <BotonFlotanteUI
+        pos={pos}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-      >
-        <button
-          onClick={handleLimpiar}
-          className="bg-gray-700 text-white px-4 py-3 rounded-full shadow-lg active:scale-95 transition-all"
-        >
-          🧹
-        </button>
-      </div>
+        onClick={handleLimpiar}
+      />
 
-      <div
-        style={{
-          position: "absolute",
-          left: "-9999px",
-          top: 0,
-          width: "800px",
-          background: "white",
-        }}
-      >
-        <PDFCotizacion
-          ref={pdfRef}
-          fecha={fecha}
-          ciudad={ciudadSel}
-          departamentoName={
-            departamentos.find((d) => d.id == departamentoSel)?.name || ""
-          }
-          dirigido={dirigido}
-          referido={referido}
-          tiempoDeEntrega={tiempoDeEntrega}
-          objeto={objeto}
-          notas={notas}
-          items={items}
-          granTotal={granTotal}
-          proyecto={proyecto}
-        />
-      </div>
+      <ModalItemsCatalogo
+        open={modalCatalogo}
+        onClose={() => setModalCatalogo(false)}
+        itemsCatalogo={itemsCatalogo}
+        setItemsCatalogo={setItemsCatalogo}
+      />
     </main>
   );
 }

@@ -55,7 +55,9 @@ export async function getCotizacionNumber(fechaClave, referido, token, rootFolde
   let maxNum = 0;
 
   data.files.forEach((file) => {
-    const match = file.name.match(new RegExp(`^${fechaClave}-(\\d+)\\.pdf$`));
+    const match = file.name.match(
+      new RegExp(`^${fechaClave}-(\\d+)-`)
+    );
     if (match) {
       const num = parseInt(match[1]);
       if (num > maxNum) maxNum = num;
