@@ -1,8 +1,13 @@
 import { useState, useEffect } from "react";
 import { FileUp } from "lucide-react";
 import { today, numeroALetras, formatearFecha } from "./utils/formatters";
+import { useGoogle } from "../../context/GoogleContext";
+import { GOOGLE_CONFIG } from "../../config/google";
 import { BENEFICIARIOS } from "./constants/Enums";
 import { generarPDFVectorial } from "./utils/generarPDFVectorial";
+import { guardarCuentaCobro } from "./services/googleDrive.service";
+
+const ROOT_FOLDER_ID = GOOGLE_CONFIG.CUENTAS_COBRO_ROOT_FOLDER_ID;
 
 const safeParse = (json) => {
     try {
@@ -16,6 +21,8 @@ const STORAGE_KEY = "form_cuenta_cobro";
 const STORAGE_BACKUP_KEY = "form_cuenta_cobro_backup";
 
 export default function CuentasDeCobro() {
+
+    const { token } = useGoogle();
 
     const [fecha, setFecha] = useState("");
     const [ciudad] = useState("Tuluá");
@@ -94,6 +101,59 @@ export default function CuentasDeCobro() {
         a.click();
 
         URL.revokeObjectURL(url);
+    };
+
+    const subirADrive = async () => {
+        const error = validarFormulario();
+        if (error) {
+            alert(error);
+            return;
+        }
+
+        if (!token) {
+            alert("Debes iniciar sesión con Google para subir el archivo.");
+            return;
+        }
+
+        try {
+            const data = {
+                ciudad,
+                departamento,
+                fecha: formatearFecha(fecha),
+
+                deudorNombre,
+                deudorDocumento: deudorDocumento?.trim() || null,
+                deudorTipoDocumento: deudorDocumento?.trim() ? deudorTipoDocumento : null,
+
+                beneficiario,
+                beneficiarioNombre,
+                beneficiarioDocumento,
+                beneficiarioTipoDocumento,
+
+                valorLetras,
+                concepto,
+                usarNotas,
+                notas,
+                firmante
+            };
+
+            const finalBytes = await generarPDFVectorial(data, archivoExtra);
+            const pdfBlob = new Blob([finalBytes], { type: "application/pdf" });
+
+            await guardarCuentaCobro({
+                pdfBlob,
+                token,
+                rootFolderId: ROOT_FOLDER_ID,
+                deudorNombre,
+                isIphone: /iPhone|iPad|iPod/i.test(navigator.userAgent),
+            });
+
+            alert("✅ Cuenta de cobro subida correctamente a Drive");
+
+        } catch (err) {
+            console.error("Error al subir cuenta de cobro:", err);
+            alert("❌ Error al subir la cuenta de cobro");
+        }
     };
 
     useEffect(() => {
@@ -391,6 +451,13 @@ export default function CuentasDeCobro() {
                     className="bg-green-600 text-white px-6 py-3 rounded"
                 >
                     Generar PDF
+                </button>
+
+                <button
+                    onClick={subirADrive}
+                    className="bg-blue-600 text-white px-6 py-3 rounded"
+                >
+                    Subir a Drive
                 </button>
 
                 <button
