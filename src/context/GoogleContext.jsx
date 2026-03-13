@@ -4,10 +4,10 @@ import useGoogleAuth from "../hooks/useGoogleAuth";
 const GoogleContext = createContext();
 
 export function GoogleProvider({ children }) {
-  const { token, login, logout, loading } = useGoogleAuth();
+  const { token, user, role, login, logout, loading } = useGoogleAuth();
 
   return (
-    <GoogleContext.Provider value={{ token, login, logout, loading }}>
+    <GoogleContext.Provider value={{ token, user, role, login, logout, loading }}>
       {children}
     </GoogleContext.Provider>
   );

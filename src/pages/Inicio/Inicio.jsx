@@ -3,14 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useGoogle } from "../../context/GoogleContext";
 
 export default function Inicio() {
-  const { token, login, loading } = useGoogle();
+  const { token, user, login, loading } = useGoogle();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && token) {
-      navigate("/entradas-salidas");
+    if (!loading && token && user) {
+      navigate("/home", { replace: true });
     }
-  }, [loading, token, navigate]);
+  }, [loading, token, user, navigate]);
 
   if (loading) {
     return (

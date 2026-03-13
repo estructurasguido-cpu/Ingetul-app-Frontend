@@ -1,8 +1,8 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useGoogle } from "../context/GoogleContext";
 
-export default function ProtectedRoute() {
-  const { token, loading } = useGoogle();
+export default function ProtectedRoute({ allowedRoles }) {
+  const { token, user, role, loading } = useGoogle();
 
   if (loading) {
     return (
@@ -12,8 +12,12 @@ export default function ProtectedRoute() {
     );
   }
 
-  if (!token) {
+  if (!token || !user) {
     return <Navigate to="/" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    return <Navigate to="/home" replace />;
   }
 
   return <Outlet />;
