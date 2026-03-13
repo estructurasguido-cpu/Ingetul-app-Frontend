@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useGoogle } from "../context/GoogleContext";
 import ModalConfirm from "../components/ModalConfirm";
+import Sidebar from "../components/Sidebar";
 
 export default function Layout() {
   const [open, setOpen] = useState(false);
@@ -19,65 +20,14 @@ export default function Layout() {
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
-      <div className="flex min-h-screen transition-all duration-300 relative">
-        {/* Sidebar */}
-        <aside
-          className={`fixed top-0 left-0 h-full bg-blue-600 text-white p-5 flex flex-col shadow-lg transition-all duration-300 overflow-hidden z-50 ${open ? "w-56 translate-x-0" : "-translate-x-64 w-56"
-            }`}
-        >
-          <div className="flex items-center justify-between mb-4 ml-14">
-            <h2 className="text-xl font-semibold">
-              Ingetul
-            </h2>
-          </div>
+      <div className="flex min-h-screen relative">
+        <Sidebar
+          open={open}
+          token={token}
+          onLogoutClick={() => setShowLogoutModal(true)}
+        />
 
-          <nav className="flex flex-col gap-3 mt-4">
-            <NavLink
-              to="/entradas-salidas"
-              className={({ isActive }) =>
-                `font-medium px-3 py-2 rounded-md ${isActive ? "bg-white text-blue-600" : "hover:bg-white/20"
-                }`
-              }
-            >
-              Entradas / Salidas
-            </NavLink>
-
-            <NavLink
-              to="/cotizaciones"
-              className={({ isActive }) =>
-                `font-medium px-3 py-2 rounded-md ${isActive ? "bg-white text-blue-600" : "hover:bg-white/20"
-                }`
-              }
-            >
-              Cotizaciones
-            </NavLink>
-
-            <NavLink
-              to="/cuentas-de-cobro"
-              className={({ isActive }) =>
-                `font-medium px-3 py-2 rounded-md ${isActive ? "bg-white text-blue-600" : "hover:bg-white/20"
-                }`
-              }
-            >
-              Cuentas de Cobro
-            </NavLink>
-
-          </nav>
-
-          <div className="mt-auto">
-            {token && (
-              <button
-                onClick={() => setShowLogoutModal(true)}
-                className="bg-red-500 w-full mt-4 px-3 py-2 rounded-md hover:bg-red-600"
-              >
-                Desconectar
-              </button>
-            )}
-          </div>
-        </aside>
-
-        {/* Contenido principal */}
-        <main className="flex-1 bg-gray-100 p-5 overflow-y-auto">
+        <main className="flex-1 bg-gray-100 p-3 md:p-5">
           <Outlet />
         </main>
       </div>
@@ -92,6 +42,7 @@ export default function Layout() {
         }}
         title="Cerrar sesión"
         message="¿Estás seguro de que deseas desconectarte?"
+        confirmText="Cerrar sesión"
       />
     </>
   );

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { createItemCatalog, updateItemCatalog, deleteItemCatalog } from "../services/items.service";
 import ModalConfirm from "../../../components/ModalConfirm";
+import Toast from "../../../components/Toast"
+import { useToast } from "../hooks/useToast";
 
 export default function ModalItemsCatalogo({
     open,
@@ -9,16 +11,15 @@ export default function ModalItemsCatalogo({
     setItemsCatalogo
 }) {
 
+    const { toast, showToast, closeToast } = useToast();
+
     const [nuevoItem, setNuevoItem] = useState("");
     const [editandoId, setEditandoId] = useState(null);
     const [textoEditando, setTextoEditando] = useState("");
     const [busqueda, setBusqueda] = useState("");
     const [loading, setLoading] = useState(false);
-    const [mensaje, setMensaje] = useState("");
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [itemAEliminar, setItemAEliminar] = useState(null);
-
-    if (!open) return null;
 
     useEffect(() => {
 
@@ -32,6 +33,8 @@ export default function ModalItemsCatalogo({
 
     }, []);
 
+    if (!open) return null;
+
     const crearItem = async () => {
 
         const texto = nuevoItem.trim();
@@ -43,7 +46,7 @@ export default function ModalItemsCatalogo({
         );
 
         if (existe) {
-            setMensaje("Este ítem ya existe en el catálogo");
+            showToast("Este ítem ya existe en el catálogo", "warning");
             return;
         }
 
@@ -57,11 +60,11 @@ export default function ModalItemsCatalogo({
 
             setNuevoItem("");
 
-            setMensaje("Ítem creado correctamente");
+            showToast("Ítem creado correctamente", "success");
 
         } catch (err) {
 
-            setMensaje("Error creando el ítem");
+            showToast("Error creando el ítem", "error");
 
         } finally {
             setLoading(false);
@@ -85,7 +88,7 @@ export default function ModalItemsCatalogo({
 
             setEditandoId(null);
 
-            setMensaje("Ítem actualizado");
+            showToast("Ítem actualizado", "success");
 
         } finally {
             setLoading(false);
@@ -112,7 +115,7 @@ export default function ModalItemsCatalogo({
                 prev.filter(it => it.id !== itemAEliminar)
             );
 
-            setMensaje("Ítem eliminado");
+            showToast("Ítem eliminado", "success");
 
         } finally {
 
@@ -272,14 +275,6 @@ export default function ModalItemsCatalogo({
 
                     </div>
 
-                    {mensaje && (
-
-                        <div className="text-sm text-gray-600">
-                            {mensaje}
-                        </div>
-
-                    )}
-
                 </div>
 
                 <div className="border-t px-6 py-4 flex justify-end">
@@ -302,6 +297,14 @@ export default function ModalItemsCatalogo({
                 message={`¿Eliminar "${itemSeleccionado?.nombre}" del catálogo?`}
                 confirmText="Eliminar"
             />
+
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={closeToast}
+                />
+            )}
         </div>
     );
 }
