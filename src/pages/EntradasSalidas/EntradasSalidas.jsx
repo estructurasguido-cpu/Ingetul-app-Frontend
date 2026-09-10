@@ -1,405 +1,580 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useGoogle } from '../../context/GoogleContext';
-import { useLoader } from '../../context/LoaderContext';
-import { GOOGLE_CONFIG } from '../../config/google';
-import { today, formatNumber, formatFecha } from './utils/formatters';
-import { exportExcel } from './utils/Excel';
-import { computeWithSaldo } from './utils/computeSaldo';
-import { loadSheetData, saveSheetData, colorizeRows } from './services/googleSheets.service';
-import FiltersModal from './components/FiltersModal';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download, Filter, ListChecks, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { useGoogle } from "../../context/GoogleContext";
+import { GOOGLE_CONFIG } from "../../config/google";
+import FiltersModal from "./components/FiltersModal";
+import MovementForm from "./components/MovementForm";
+import MovementsTable from "./components/MovementsTable";
+import {
+  getSheetModifiedTime,
+  loadSheetData,
+  saveSheetData
+} from "./services/googleSheets.service";
+import {
+  getMovements,
+  saveMovementsSnapshot
+} from "./services/movimientos.service";
+import { computeWithSaldo } from "./utils/computeSaldo";
+import { exportExcel } from "./utils/Excel";
+import { formatDateTime, formatNumber } from "./utils/formatters";
+import {
+  createMovementId,
+  EMPTY_MOVEMENT_FORM,
+  mapSheetRows,
+  movementSignature,
+  readStoredMovements,
+  sortByFecha,
+  validateMovementDraft,
+  validateMovementsForSave
+} from "./utils/movimientos";
 
-const STORAGE_KEY = 'entradas_salidas';
-const FILE_ID_KEY = GOOGLE_CONFIG.ENTRADAS_SALIDAS_SPREADSHEET_ID;
+const STORAGE_KEY = "entradas_salidas";
+const DIRTY_KEY = "entradas_salidas_dirty";
+const SIGNATURE_KEY = "entradas_salidas_remote_signature";
+const FILE_ID = GOOGLE_CONFIG.ENTRADAS_SALIDAS_SPREADSHEET_ID;
 
-const TYPE_COLORS = {
-  Entrada: 'bg-blue-50 text-blue-900',
-  Salida: 'bg-gray-50 text-gray-800',
-  Prestamo: 'bg-red-50 text-red-900',
-  Bancos: 'bg-green-50 text-green-900'
-};
-
-const TYPE_SELECTED_COLORS = {
-  Entrada: 'bg-blue-100 text-blue-900',
-  Salida: 'bg-gray-100 text-gray-900',
-  Prestamo: 'bg-red-100 text-red-900',
-  Bancos: 'bg-green-100 text-green-900'
-};
-
-const initialFilters = {
+const INITIAL_FILTERS = {
   tipo: "",
+  cuenta: "",
   desde: "",
   hasta: "",
   texto: ""
 };
 
-export default function EntradasSalidas() {
-  const { token, login, logout, loading } = useGoogle();
-  const [items, setItems] = useState([]);
-  const [form, setForm] = useState({ fecha: '', tipo: 'Entrada', descripcion: '', valor: '' });
-  const [editId, setEditId] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState(initialFilters);
-  const { showLoader, hideLoader } = useLoader();
+function getInitialItems() {
+  return readStoredMovements(localStorage.getItem(STORAGE_KEY));
+}
 
+function getInitialDirtyState() {
+  const storedDirtyState = localStorage.getItem(DIRTY_KEY);
+  if (storedDirtyState !== null) return storedDirtyState === "true";
+
+  return getInitialItems().length > 0 && !localStorage.getItem(SIGNATURE_KEY);
+}
+
+export default function EntradasSalidas() {
+  const { token, user, login, loading } = useGoogle();
+  const [items, setItems] = useState(getInitialItems);
+  const [form, setForm] = useState(EMPTY_MOVEMENT_FORM);
+  const [editId, setEditId] = useState(null);
+  const [formError, setFormError] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(
+    getInitialDirtyState
+  );
+  const [remoteSignature, setRemoteSignature] = useState(
+    () => localStorage.getItem(SIGNATURE_KEY) || ""
+  );
+  const [databaseSignature, setDatabaseSignature] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [sheetSyncPending, setSheetSyncPending] = useState(false);
+  const [lastSheetUpdate, setLastSheetUpdate] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [syncMessage, setSyncMessage] = useState(null);
+  const primaryLoadRef = useRef(false);
+
+  const ledgerItems = useMemo(
+    () => computeWithSaldo(sortByFecha(items)),
+    [items]
+  );
 
   const filteredItems = useMemo(() => {
-    return computeWithSaldo(
-      items.filter(item => {
-        const matchTipo = filters.tipo ? item.tipo === filters.tipo : true;
+    const text = filters.texto.trim().toLocaleLowerCase("es");
 
-        const matchDesde = filters.desde ? item.fecha >= filters.desde : true;
-        const matchHasta = filters.hasta ? item.fecha <= filters.hasta : true;
+    return ledgerItems.filter(item => {
+      if (filters.tipo && item.tipo !== filters.tipo) return false;
+      if (filters.cuenta && item.cuenta !== filters.cuenta) return false;
+      if (filters.desde && item.fecha < filters.desde) return false;
+      if (filters.hasta && item.fecha > filters.hasta) return false;
+      if (text && !item.descripcion?.toLocaleLowerCase("es").includes(text)) return false;
+      return true;
+    });
+  }, [filters, ledgerItems]);
 
-        const matchTexto = filters.texto
-          ? item.descripcion?.toLowerCase().includes(filters.texto.toLowerCase())
-          : true;
+  const summary = useMemo(() => {
+    const totalEntradas = ledgerItems.reduce((sum, item) => sum + (Number(item.entra) || 0), 0);
+    const totalSalidas = ledgerItems.reduce((sum, item) => sum + (Number(item.sale) || 0), 0);
+    return {
+      total: ledgerItems.length,
+      entradas: totalEntradas,
+      salidas: totalSalidas,
+      saldo: ledgerItems.at(-1)?.saldo ?? 0
+    };
+  }, [ledgerItems]);
 
-        return matchTipo && matchDesde && matchHasta && matchTexto;
-      })
-    );
-  }, [items, filters]);
+  const visibleTotals = useMemo(() => ({
+    entradas: filteredItems.reduce((sum, item) => sum + (Number(item.entra) || 0), 0),
+    salidas: filteredItems.reduce((sum, item) => sum + (Number(item.sale) || 0), 0),
+    saldo: filteredItems.at(-1)?.saldo ?? 0
+  }), [filteredItems]);
 
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) setItems(JSON.parse(raw));
-  }, []);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
   useEffect(() => {
-    if (!loading && token) {
-      loadFromDrive();
-    }
-  }, [token, loading]);
+    localStorage.setItem(DIRTY_KEY, String(hasUnsavedChanges));
+  }, [hasUnsavedChanges]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
+  useEffect(() => {
+    if (remoteSignature) localStorage.setItem(SIGNATURE_KEY, remoteSignature);
+    else localStorage.removeItem(SIGNATURE_KEY);
+  }, [remoteSignature]);
 
-  const handleAdd = (e) => {
-    e.preventDefault();
-    if (!form.tipo || form.valor === '') return;
+  useEffect(() => {
+    if (syncMessage?.tone !== "success") return undefined;
 
-    const fechaReal = form.fecha || today();
-    const valorNum = Number(form.valor) || 0;
+    const timeoutId = setTimeout(() => {
+      setSyncMessage(current => current === syncMessage ? null : current);
+    }, 4500);
 
-    let entra = 0, sale = 0;
-    if (form.tipo === 'Entrada' || form.tipo === 'Bancos') entra = valorNum;
-    if (form.tipo === 'Salida' || form.tipo === 'Prestamo') sale = valorNum;
+    return () => clearTimeout(timeoutId);
+  }, [syncMessage]);
 
-    if (editId !== null) {
-      const newList = items.map(it =>
-        it.id === editId
-          ? { ...it, fecha: fechaReal, tipo: form.tipo, descripcion: form.descripcion, entra, sale }
-          : it
-      );
-      setItems(computeWithSaldo(newList));
+  const loadMovements = useCallback(async ({ notify = true } = {}) => {
+    if (syncing) return false;
+
+    setSyncing(true);
+    try {
+      const loadedItems = sortByFecha(await getMovements());
+
+      setItems(loadedItems);
+      setDatabaseSignature(movementSignature(loadedItems));
+      setHasUnsavedChanges(false);
       setEditId(null);
-    } else {
-      const newItem = {
-        id: Date.now(),
-        fecha: fechaReal,
-        tipo: form.tipo,
-        descripcion: form.descripcion,
-        entra,
-        sale
-      };
-      setItems(computeWithSaldo([...items, newItem]));
+      setForm(EMPTY_MOVEMENT_FORM);
+      setFormError("");
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+
+      if (token) {
+        try {
+          const sheetRows = await loadSheetData(FILE_ID, token);
+          const sheetItems = sortByFecha(mapSheetRows(sheetRows));
+          const sheetSignature = movementSignature(sheetItems);
+          const isPending = movementSignature(loadedItems) !== sheetSignature;
+
+          try {
+            setLastSheetUpdate(await getSheetModifiedTime(FILE_ID, token));
+          } catch (modifiedTimeError) {
+            console.warn("No se pudo consultar la última actualización de Google Sheets:", modifiedTimeError);
+          }
+
+          setRemoteSignature(sheetSignature);
+          setSheetSyncPending(isPending);
+          setSyncMessage(notify || isPending
+            ? {
+              tone: isPending ? "warning" : "success",
+              text: isPending
+                ? "Los datos están actualizados, pero Google Sheets tiene cambios pendientes de sincronizar."
+                : "Datos actualizados. Google Sheets está sincronizado."
+            }
+            : null
+          );
+        } catch (sheetError) {
+          console.error("No se pudo comprobar Google Sheets:", sheetError);
+          setSheetSyncPending(true);
+          setSyncMessage({
+            tone: "warning",
+            text: "Los datos se cargaron correctamente, pero no se pudo comprobar Google Sheets."
+          });
+        }
+      } else {
+        setSheetSyncPending(true);
+        setSyncMessage(notify
+          ? { tone: "warning", text: "Datos actualizados. Google Sheets no pudo comprobarse." }
+          : null
+        );
+      }
+
+      return true;
+    } catch (error) {
+      console.error("No se pudieron cargar los movimientos:", error);
+      setSyncMessage({
+        tone: "error",
+        text: "No se pudieron cargar los datos. Se conservaron los datos locales."
+      });
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  }, [syncing, token]);
+
+  useEffect(() => {
+    if (loading || primaryLoadRef.current) return;
+    primaryLoadRef.current = true;
+
+    if (hasUnsavedChanges) {
+      setSyncMessage({
+        tone: "warning",
+        text: "Hay cambios locales pendientes. Guárdalos o recarga para descartarlos."
+      });
+      return;
     }
 
-    setForm({ fecha: '', tipo: 'Entrada', descripcion: '', valor: '' });
-  };
+    void loadMovements({ notify: false });
+  }, [hasUnsavedChanges, loadMovements, loading]);
 
-  const handleDelete = (id) => {
-    const filtered = items.filter(i => i.id !== id);
-    setItems(computeWithSaldo(filtered));
-    if (editId === id) {
-      setEditId(null);
-      setForm({ fecha: '', tipo: 'Entrada', valor: '', descripcion: '' });
+  function markAsChanged() {
+    setHasUnsavedChanges(true);
+    setSyncMessage({
+      tone: "warning",
+      text: "Cambios pendientes de guardar."
+    });
+  }
+
+  function resetForm() {
+    setForm(EMPTY_MOVEMENT_FORM);
+    setEditId(null);
+    setFormError("");
+  }
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm(current => ({ ...current, [name]: value }));
+    setFormError("");
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const validationError = validateMovementDraft(form);
+
+    if (validationError) {
+      setFormError(validationError);
+      return;
     }
-  };
 
-  const clearAll = () => {
-    if (confirm('¿Borrar todos los registros?')) {
-      setItems([]);
-      setEditId(null);
-      setForm({ fecha: '', tipo: 'Entrada', descripcion: '', valor: '' });
-    }
-  };
+    const amount = Number(form.valor);
+    const description = form.descripcion.trim();
 
-  const handleRowClick = (item) => {
+    const movement = {
+      id: editId || createMovementId(),
+      fecha: form.fecha,
+      tipo: form.tipo,
+      cuenta: form.cuenta,
+      descripcion: description,
+      entra: form.tipo === "Entrada" || form.tipo === "Bancos" ? amount : 0,
+      sale: form.tipo === "Salida" || form.tipo === "Prestamo" ? amount : 0
+    };
+
+    setItems(current => sortByFecha(
+      editId
+        ? current.map(item => item.id === editId ? movement : item)
+        : [...current, movement]
+    ));
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    markAsChanged();
+    resetForm();
+  }
+
+  function handleEdit(item) {
+    setEditId(item.id);
     setForm({
       fecha: item.fecha,
       tipo: item.tipo,
-      descripcion: item.descripcion,
-      valor: item.entra ? item.entra : item.sale,
+      cuenta: item.cuenta || "Ahorros",
+      descripcion: item.descripcion || "",
+      valor: String(item.entra || item.sale || "")
     });
-    setEditId(item.id);
-  };
+    setFormError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-  const handleCancelEdit = () => {
-    setEditId(null);
-    setForm({ fecha: '', tipo: 'Entrada', valor: '', descripcion: '' });
-  };
+  function handleDelete(item) {
+    if (!confirm(`¿Eliminar el movimiento "${item.descripcion}"?`)) return;
+    setItems(current => current.filter(movement => movement.id !== item.id));
+    if (editId === item.id) resetForm();
+    markAsChanged();
+  }
 
-  const totalSaldo = filteredItems.slice(-1)[0]?.saldo ?? 0;
-  const totalEntradas = filteredItems.reduce((sum, it) => sum + (Number(it.entra) || 0), 0);
-  const totalSalidas = filteredItems.reduce((sum, it) => sum + (Number(it.sale) || 0), 0);
+  function toggleSelectionMode() {
+    setSelectionMode(current => !current);
+    setSelectedIds(new Set());
+  }
 
-  const loadFromDrive = async () => {
-    try {
-      const rows = await loadSheetData(FILE_ID_KEY, token);
+  function handleToggleSelect(id) {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
-      const filtradas = rows.filter(r =>
-        r.Tipo !== "TOTALES" &&
-        (r.Fecha || r.fecha) &&
-        (r.Entra || r.Sale)
-      );
+  function handleToggleSelectAll() {
+    const visibleIds = filteredItems.map(item => item.id);
+    const allVisibleSelected = visibleIds.length > 0
+      && visibleIds.every(id => selectedIds.has(id));
 
-      const mapped = filtradas.map((r, i) => ({
-        id: Date.now() + i,
-        fecha: formatFecha(r.Fecha || r.fecha || ''),
-        tipo: r.Tipo || "Entrada",
-        descripcion: r.Descripcion || r["Descripción"] || r.descripcion || '',
-        entra: Number(r.Entra || 0),
-        sale: Number(r.Sale || 0),
-      }));
-      setItems(computeWithSaldo(mapped));
-      console.log("✅ Datos cargados automáticamente desde Google Sheets");
-    } catch (err) {
-      console.error("❌ Error al cargar automáticamente:", err);
+    setSelectedIds(current => {
+      const next = new Set(current);
+      visibleIds.forEach(id => {
+        if (allVisibleSelected) next.delete(id);
+        else next.add(id);
+      });
+      return next;
+    });
+  }
+
+  function handleDeleteSelected() {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    const label = count === 1 ? "movimiento seleccionado" : "movimientos seleccionados";
+    if (!confirm(`¿Eliminar ${count} ${label}? El cambio se aplicará cuando guardes.`)) return;
+
+    setItems(current => current.filter(item => !selectedIds.has(item.id)));
+    if (editId && selectedIds.has(editId)) resetForm();
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    markAsChanged();
+  }
+
+  function handleApplyFilters(nextFilters) {
+    setFilters(nextFilters);
+    setSelectedIds(new Set());
+  }
+
+  async function handleReload() {
+    if (hasUnsavedChanges && !confirm("Hay cambios locales sin guardar. ¿Descartarlos y recargar?")) return;
+    await loadMovements();
+  }
+
+  async function handleSave() {
+    if (!token) {
+      login();
+      return;
     }
-  };
+    if (syncing || (!hasUnsavedChanges && !sheetSyncPending)) return;
 
-  const saveToDrive = async () => {
-    if (!token) return login();
+    const validationError = validateMovementsForSave(ledgerItems);
 
-    const id = FILE_ID_KEY;
+    if (validationError) {
+      setSyncMessage({
+        tone: "error",
+        text: `${validationError} No se guardó ningún cambio.`
+      });
+      return;
+    }
+
+    setSyncing(true);
+    let changesAreSaved = !hasUnsavedChanges;
 
     try {
-      showLoader("Guardando datos en Google Sheets...");
+      const latestDatabaseItems = sortByFecha(await getMovements());
+      const latestDatabaseSignature = movementSignature(latestDatabaseItems);
 
-      const rows = computeWithSaldo(items);
+      if (
+        (databaseSignature !== null && latestDatabaseSignature !== databaseSignature)
+        || (databaseSignature === null && latestDatabaseItems.length > 0)
+      ) {
+        setSyncMessage({
+          tone: "error",
+          text: "Los datos cambiaron desde la última carga. Recarga antes de guardar para no sobrescribir movimientos de otro usuario."
+        });
+        return;
+      }
 
-      const rowsConTotales = [
+      if (hasUnsavedChanges) {
+        await saveMovementsSnapshot(ledgerItems, user?.email);
+        changesAreSaved = true;
+        setDatabaseSignature(movementSignature(ledgerItems));
+        setHasUnsavedChanges(false);
+      }
+
+      const remoteRows = await loadSheetData(FILE_ID, token);
+      const currentRemoteSignature = movementSignature(mapSheetRows(remoteRows));
+
+      if (remoteSignature && currentRemoteSignature !== remoteSignature) {
+        setSheetSyncPending(true);
+        setSyncMessage({
+          tone: "warning",
+          text: "Los cambios quedaron guardados, pero Google Sheets cambió desde la última carga. Revisa la hoja y luego recarga antes de decidir si la sobrescribes."
+        });
+        return;
+      }
+
+      if (!remoteSignature && remoteRows.length > 0) {
+        const overwrite = confirm("No existe una referencia de sincronización anterior. ¿Sobrescribir la hoja con los datos locales?");
+        if (!overwrite) {
+          setSheetSyncPending(true);
+          setSyncMessage({
+            tone: "warning",
+            text: "Los datos están guardados. La actualización de Google Sheets quedó pendiente."
+          });
+          return;
+        }
+      }
+
+      const rows = ledgerItems;
+      const rowsWithTotals = [
         ...rows,
         {
           fecha: "",
           tipo: "TOTALES",
+          cuenta: "",
           descripcion: "",
-          entra: totalEntradas,
-          sale: totalSalidas,
-          saldo: totalSaldo
+          entra: summary.entradas,
+          sale: summary.salidas,
+          saldo: summary.saldo
         }
       ];
 
-      await saveSheetData(id, token, rowsConTotales);
-      await colorizeRows(id, token, rows);
-
-      showLoader("✅ Datos guardados correctamente");
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      setTimeout(() => {
-        hideLoader();
-      }, 1300);
-
-    } catch (err) {
-      console.error(err);
-
-      showLoader("❌ Error al guardar en Google Sheets");
-
-      await new Promise(resolve => setTimeout(resolve, 50));
-      setTimeout(() => {
-        hideLoader();
-      }, 1600);
+      await saveSheetData(FILE_ID, token, rowsWithTotals);
+      try {
+        setLastSheetUpdate(await getSheetModifiedTime(FILE_ID, token));
+      } catch (modifiedTimeError) {
+        console.warn("No se pudo consultar la última actualización de Google Sheets:", modifiedTimeError);
+        setLastSheetUpdate(new Date().toISOString());
+      }
+      const signature = movementSignature(rows);
+      setRemoteSignature(signature);
+      setHasUnsavedChanges(false);
+      setSheetSyncPending(false);
+      setSyncMessage({
+        tone: "success",
+        text: "Datos guardados correctamente. Google Sheets está actualizado."
+      });
+    } catch (error) {
+      console.error("No se pudieron guardar los movimientos:", error);
+      if (changesAreSaved) {
+        setSheetSyncPending(true);
+        setSyncMessage({
+          tone: "warning",
+          text: `${error?.message || "No se pudo actualizar Google Sheets"}. Los datos sí quedaron guardados y la hoja quedó pendiente.`
+        });
+      } else {
+        setSyncMessage({
+          tone: "error",
+          text: "No se pudieron guardar los cambios. Intenta nuevamente."
+        });
+      }
+    } finally {
+      setSyncing(false);
     }
+  }
+
+  async function handleExport() {
+    try {
+      await exportExcel(ledgerItems);
+    } catch (error) {
+      console.error("No se pudo exportar el archivo:", error);
+      setSyncMessage({ tone: "error", text: "No se pudo generar el archivo de Excel." });
+    }
+  }
+
+  const closeFilters = useCallback(() => setShowFilters(false), []);
+  const savePending = hasUnsavedChanges || sheetSyncPending;
+
+  const messageTone = {
+    success: "border-green-200 bg-green-50 text-green-700",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    error: "border-red-200 bg-red-50 text-red-700"
   };
 
   return (
-    <div className="max-w-4xl mx-auto text-gray-800 p-4">
-      <h1 className="text-center text-[#0051ff] text-2xl font-bold mb-4">Registro de Entradas y Salidas</h1>
+    <main className="mx-auto min-w-0 max-w-6xl text-gray-800">
+      <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-h-10 pl-14">
+          <h1 className="text-2xl font-bold text-[#0051ff]">Entradas y salidas</h1>
+          <p className="text-sm text-gray-500">Control de movimientos y saldo consolidado.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-md bg-white px-4 py-3 shadow-sm"><span className="block text-xs text-gray-500">Movimientos</span><strong className="text-xl">{summary.total}</strong></div>
+          <div className="rounded-md bg-blue-50 px-4 py-3 text-blue-800 shadow-sm"><span className="block text-xs">Entradas</span><strong className="text-lg">{formatNumber(summary.entradas)}</strong></div>
+          <div className="rounded-md bg-red-50 px-4 py-3 text-red-800 shadow-sm"><span className="block text-xs">Salidas</span><strong className="text-lg">{formatNumber(summary.salidas)}</strong></div>
+          <div className="rounded-md bg-green-50 px-4 py-3 text-green-800 shadow-sm"><span className="block text-xs">Saldo</span><strong className="text-lg">{formatNumber(summary.saldo)}</strong></div>
+        </div>
+      </header>
 
-      <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      {syncMessage && (
+        <div role="status" className={`mb-4 rounded-md border px-4 py-3 text-sm font-semibold ${messageTone[syncMessage.tone]}`}>
+          {syncMessage.text}
+        </div>
+      )}
 
-        <label className="flex flex-col text-sm">
-          Fecha
-          <input
-            type="date"
-            name="fecha"
-            value={form.fecha}
-            onChange={handleChange}
-            className="w-full sm:w-40 border border-gray-300 rounded-md px-2 py-1 
-                    focus:outline-none focus:ring focus:ring-blue-300"
-          />
-        </label>
+      <section className="mb-5 rounded-md bg-white p-4 shadow-sm">
+        <MovementForm error={formError} form={form} isEditing={editId !== null} onCancel={resetForm} onChange={handleChange} onSubmit={handleSubmit} />
+      </section>
 
-        <label className="flex flex-col text-sm">
-          Tipo
-          <select
-            name="tipo"
-            value={form.tipo}
-            onChange={handleChange}
-            className="w-full sm:w-40 border border-gray-300 rounded-md px-2 py-1 
-                    focus:outline-none focus:ring focus:ring-blue-300"
-          >
-            <option value="Entrada">Entrada</option>
-            <option value="Salida">Salida</option>
-            <option value="Prestamo">Préstamo</option>
-            <option value="Bancos">Bancos</option>
-          </select>
-        </label>
-
-        <label className="flex flex-col text-sm">
-          Descripcion
-          <input
-            type="text"
-            name="descripcion"
-            value={form.descripcion}
-            onChange={handleChange}
-            className="w-full sm:w-40 border border-gray-300 rounded-md px-2 py-1 
-                    focus:outline-none focus:ring focus:ring-blue-300"
-          />
-        </label>
-
-        <label className="flex flex-col text-sm">
-          Valor
-          <input
-            type="number"
-            name="valor"
-            value={form.valor}
-            onChange={handleChange}
-            step="any"
-            className="w-full sm:w-40 border border-gray-300 rounded-md px-2 py-1 
-                    focus:outline-none focus:ring focus:ring-blue-300"
-          />
-        </label>
-
-        <div className="flex flex-col gap-2">
-          <button type="submit" className={`px-3 py-1 rounded text-white transition transform hover:scale-105 ${editId ? 'bg-orange-500' : 'bg-green-600'}`}>
-            {editId ? 'Actualizar' : 'Agregar'}
-          </button>
-
-          {editId && (
-            <button type="button" onClick={handleCancelEdit} className="px-3 py-1 rounded bg-gray-400 text-white transition hover:scale-105">
-              Cancelar
+      <section className="overflow-hidden rounded-md bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-gray-200 p-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="font-bold text-gray-900">Movimientos</h2>
+            <p className="text-xs text-gray-500">
+              {hasUnsavedChanges
+                ? "Cambios pendientes de guardar"
+                : sheetSyncPending
+                  ? "Guardado · Google Sheets pendiente"
+                  : "Sincronizado"}
+            </p>
+            {lastSheetUpdate && (
+              <p className="mt-1 text-xs text-gray-500">
+                Google Sheets actualizado: {formatDateTime(lastSheetUpdate)}
+              </p>
+            )}
+            {selectionMode && (
+              <p className="mt-1 text-xs font-semibold text-blue-700">
+                {selectedIds.size} {selectedIds.size === 1 ? "seleccionado" : "seleccionados"}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setShowFilters(true)} className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              <Filter size={17} /> Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
             </button>
-          )}
-
-          <button type="button" onClick={() => exportExcel(computeWithSaldo(items))} className="px-3 py-1 rounded bg-blue-500 text-white hover:scale-105">
-            Exportar hoja
-          </button>
-
-          <button type="button" onClick={clearAll} className="px-3 py-1 rounded bg-red-600 text-white hover:scale-105">
-            Borrar todo
-          </button>
+            <button type="button" onClick={handleReload} disabled={syncing} title="Recargar datos" className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <RefreshCw className={syncing ? "animate-spin" : ""} size={17} /> Recargar
+            </button>
+            <button type="button" onClick={handleExport} disabled={ledgerItems.length === 0} className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <Download size={17} /> Excel
+            </button>
+            {selectionMode && (
+              <button type="button" onClick={handleDeleteSelected} disabled={selectedIds.size === 0} className="inline-flex items-center gap-2 rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <Trash2 size={17} /> Eliminar ({selectedIds.size})
+              </button>
+            )}
+            <button type="button" onClick={toggleSelectionMode} disabled={items.length === 0} className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              {selectionMode ? <X size={17} /> : <ListChecks size={17} />}
+              {selectionMode ? "Cancelar selección" : "Seleccionar"}
+            </button>
+            <button type="button" onClick={handleSave} disabled={syncing || !savePending} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <Save size={17} /> {syncing
+                ? "Guardando..."
+                : hasUnsavedChanges
+                  ? "Guardar"
+                  : sheetSyncPending
+                    ? "Guardar"
+                    : "Guardado"}
+            </button>
+          </div>
         </div>
-      </form>
 
-      <div className="border rounded shadow bg-white overflow-hidden w-full max-w-5xl mx-auto">
-
-        <div className="max-h-[400px] overflow-y-auto overflow-x-auto relative">
-
-          <table
-            className="
-            w-full
-            text-xs sm:text-sm
-            border-collapse
-            min-w-max
-            sm:min-w-full
-          "
-          >
-            <thead className="sticky top-0 z-20 bg-gray-100">
-              <tr>
-                <th className="border px-3 py-2 text-left w-auto sm:w-[20%]">Fecha</th>
-                <th className="border px-3 py-2 text-left w-auto sm:w-[20%]">Descripción</th>
-                <th className="border px-3 py-2 text-left w-auto sm:w-[20%]">Entra</th>
-                <th className="border px-3 py-2 text-left w-auto sm:w-[20%]">Sale</th>
-                <th className="border px-3 py-2 text-left w-auto sm:w-[20%]">Saldo</th>
-                <th className="border px-3 py-2 w-[40px]"></th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredItems.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center text-gray-400 py-3 border">
-                    Sin datos. Agrega un registro.
-                  </td>
-                </tr>
-              )}
-
-              {filteredItems.map((it) => {
-                const isSelected = editId === it.id;
-                const colorClasses = isSelected
-                  ? TYPE_SELECTED_COLORS[it.tipo]
-                  : TYPE_COLORS[it.tipo];
-
-                return (
-                  <tr
-                    key={it.id}
-                    onClick={() => handleRowClick(it)}
-                    className={`cursor-pointer transition-opacity hover:opacity-90 ${colorClasses} ${isSelected ? 'ring-2 ring-blue-800' : ''
-                      }`}
-                  >
-                    <td className="border px-3 py-2">{it.fecha}</td>
-                    <td className="border px-3 py-2">{it.descripcion}</td>
-                    <td className="border px-3 py-2">{it.entra ? formatNumber(it.entra) : ''}</td>
-                    <td className="border px-3 py-2">{it.sale ? formatNumber(it.sale) : ''}</td>
-                    <td className="border px-3 py-2">{formatNumber(it.saldo)}</td>
-
-                    <td className="border px-3 py-2 text-center">
-                      <button
-                        className="font-bold text-lg"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(it.id);
-                        }}
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredItems.length > 0 && (
-                <tr className="sticky bottom-0 bg-gray-50 font-bold z-10">
-                  <td colSpan={2} className="border px-3 py-2">TOTALES</td>
-                  <td className="border px-3 py-2">{formatNumber(totalEntradas)}</td>
-                  <td className="border px-3 py-2">{formatNumber(totalSalidas)}</td>
-                  <td className="border px-3 py-2">{formatNumber(totalSaldo)}</td>
-                  <td className="border px-3 py-2"></td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 my-4 items-center justify-center">
-
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="px-3 py-1 rounded bg-purple-600 text-white hover:scale-105"
-        >
-          Filtros
-        </button>
-
-        <button onClick={saveToDrive} className="px-3 py-1 rounded bg-blue-600 text-white">
-          Guardar
-        </button>
-      </div>
+        <MovementsTable
+          items={filteredItems}
+          totalEntradas={visibleTotals.entradas}
+          totalSalidas={visibleTotals.salidas}
+          totalSaldo={visibleTotals.saldo}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAll}
+        />
+      </section>
 
       <FiltersModal
         isOpen={showFilters}
-        onClose={() => setShowFilters(false)}
+        onClose={closeFilters}
         initialFilters={filters}
-        onApply={(newFilters) => setFilters(newFilters)}
+        onApply={handleApplyFilters}
       />
-    </div>
+    </main>
   );
 }
