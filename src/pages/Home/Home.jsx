@@ -2,9 +2,10 @@ import { NavLink } from "react-router-dom";
 import {
     ArrowLeftRight,
     FileText,
+    Car,
     Receipt,
     Wallet,
-    FlaskConical
+    CalendarDays
 } from "lucide-react";
 import { useGoogle } from "../../context/GoogleContext";
 
@@ -38,11 +39,18 @@ const modules = [
         icon: Wallet
     },
     {
-        label: "Laboratorio",
-        to: "/laboratorio",
-        roles: ["admin", "laboratorio"],
+        label: "Vehículos",
+        to: "/vehiculos",
+        roles: ["admin", "logistica"],
+        color: "bg-sky-600 hover:bg-sky-700",
+        icon: Car
+    },
+    {
+        label: "Programación",
+        to: "/programacion",
+        roles: ["admin", "logistica"],
         color: "bg-orange-500 hover:bg-orange-600",
-        icon: FlaskConical
+        icon: CalendarDays
     }
 ];
 
@@ -56,7 +64,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {modules
-                    .filter(mod => mod.roles.includes(role))
+                    .filter(mod => !mod.hidden && mod.roles.includes(role))
                     .map((mod) => {
                         const Icon = mod.icon;
 

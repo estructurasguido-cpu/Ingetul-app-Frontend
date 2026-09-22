@@ -1,5 +1,14 @@
 import { NavLink } from "react-router-dom";
 import { useGoogle } from "../context/GoogleContext";
+import {
+    ArrowRightLeft,
+    CalendarDays,
+    FileText,
+    HandCoins,
+    House,
+    ReceiptText,
+    Truck
+} from "lucide-react";
 
 export default function Sidebar({
     open,
@@ -9,12 +18,13 @@ export default function Sidebar({
     const { role } = useGoogle();
 
     const links = [
-        { label: "Home", to: "/home", roles: ["admin", "laboratorio"] },
-        { label: "Entradas / Salidas", to: "/entradas-salidas", roles: ["admin"] },
-        { label: "Cotizaciones", to: "/cotizaciones", roles: ["admin"] },
-        { label: "Cuentas de Cobro", to: "/cuentas-de-cobro", roles: ["admin"] },
-        { label: "Comprobante de Ingreso", to: "/comprobante-de-ingreso", roles: ["admin"] },
-        { label: "Laboratorio", to: "/laboratorio", roles: ["admin", "laboratorio"] }
+        { label: "Home", to: "/home", roles: ["admin", "logistica"], icon: House },
+        { label: "Entradas / Salidas", to: "/entradas-salidas", roles: ["admin"], icon: ArrowRightLeft },
+        { label: "Cotizaciones", to: "/cotizaciones", roles: ["admin"], icon: FileText },
+        { label: "Cuentas de Cobro", to: "/cuentas-de-cobro", roles: ["admin"], icon: HandCoins },
+        { label: "Comprobante de Ingreso", to: "/comprobante-de-ingreso", roles: ["admin"], icon: ReceiptText },
+        { label: "Vehículos", to: "/vehiculos", roles: ["admin", "logistica"], icon: Truck },
+        { label: "Programación", to: "/programacion", roles: ["admin", "logistica"], icon: CalendarDays }
     ];
 
     return (
@@ -29,7 +39,10 @@ export default function Sidebar({
             <nav className="flex flex-col gap-3 mt-4">
                 {links
                     .filter(link => link.roles.includes(role))
-                    .map(link => (
+                    .map(link => {
+                        const Icon = link.icon;
+
+                        return (
                         <NavLink
                             key={link.to}
                             to={link.to}
@@ -39,10 +52,14 @@ export default function Sidebar({
                                     : "hover:bg-white/20"
                                 }`
                             }
-                        >
-                            {link.label}
-                        </NavLink>
-                    ))}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Icon className="shrink-0" size={18} />
+                                    {link.label}
+                                </span>
+                            </NavLink>
+                        );
+                    })}
             </nav>
 
             {token && (
