@@ -14,7 +14,7 @@ const SCHEDULE_SELECT = `
     estado,
     created_at,
     updated_at,
-    vehiculo:vehiculos (
+    vehiculo:vehiculos!programacion_labores_vehiculo_fk (
         id,
         placa,
         descripcion,
